@@ -1,3 +1,4 @@
+// end chat endpoint
 import { neon } from "@neondatabase/serverless";
 
 function allowed(req, res) {
