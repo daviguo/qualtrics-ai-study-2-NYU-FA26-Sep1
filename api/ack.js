@@ -1,15 +1,16 @@
 import { neon } from "@neondatabase/serverless";
 
-function allowed(req, res) {
 
-    const origin =
-        req.headers.origin;
+function applyCors(req, res) {
+
+    const origin = req.headers.origin;
 
     const origins =
         (process.env.ALLOWED_ORIGINS || "")
             .split(",")
             .map(x => x.trim())
             .filter(Boolean);
+
 
     if (
         origin &&
@@ -22,6 +23,7 @@ function allowed(req, res) {
         );
     }
 
+
     res.setHeader(
         "Access-Control-Allow-Methods",
         "POST, OPTIONS"
@@ -31,6 +33,12 @@ function allowed(req, res) {
         "Access-Control-Allow-Headers",
         "Content-Type"
     );
+
+    res.setHeader(
+        "Vary",
+        "Origin"
+    );
+
 
     return (
         !origin ||
@@ -42,14 +50,12 @@ function allowed(req, res) {
 export default async function handler(req, res) {
 
     const originAllowed =
-        allowed(req, res);
+        applyCors(req, res);
 
 
     if (req.method === "OPTIONS") {
 
-        return res
-            .status(204)
-            .end();
+        return res.status(204).end();
     }
 
 
@@ -84,14 +90,44 @@ export default async function handler(req, res) {
         } = body || {};
 
 
+        console.log("ACK REQUEST", {
+            session_id,
+            response_id,
+            assistant_display_epoch
+        });
+
+
+        if (!session_id) {
+
+            return res.status(400).json({
+                error: "Missing session_id"
+            });
+        }
+
+
+        if (!response_id) {
+
+            return res.status(400).json({
+                error: "Missing response_id"
+            });
+        }
+
+
         if (
-            !session_id ||
-            !response_id ||
-            !assistant_display_epoch
+            assistant_display_epoch === undefined ||
+            assistant_display_epoch === null
         ) {
 
             return res.status(400).json({
-                error: "Missing required fields"
+                error: "Missing assistant_display_epoch"
+            });
+        }
+
+
+        if (!process.env.DATABASE_URL) {
+
+            return res.status(500).json({
+                error: "DATABASE_URL missing"
             });
         }
 
@@ -100,31 +136,54 @@ export default async function handler(req, res) {
             neon(process.env.DATABASE_URL);
 
 
-        await sql`
-            UPDATE ai_turns
+        const updated =
+            await sql`
+                UPDATE ai_turns
 
-            SET assistant_display_epoch =
-                ${assistant_display_epoch}
+                SET assistant_display_epoch =
+                    ${assistant_display_epoch}
 
-            WHERE session_id =
-                ${session_id}
+                WHERE session_id =
+                    ${session_id}
 
-            AND response_id =
-                ${response_id}
-        `;
+                AND response_id =
+                    ${response_id}
+
+                RETURNING
+                    session_id,
+                    turn_number,
+                    response_id,
+                    assistant_display_epoch
+            `;
+
+
+        if (updated.length === 0) {
+
+            return res.status(404).json({
+                error: "No matching turn found",
+                session_id: session_id,
+                response_id: response_id
+            });
+        }
 
 
         return res.status(200).json({
-            ok: true
+            ok: true,
+            updated: updated[0]
         });
 
 
     } catch (error) {
 
-        console.error(error);
+        console.error(
+            "ACK ERROR:",
+            error
+        );
+
 
         return res.status(500).json({
-            error: "Internal server error"
+            error: "Internal server error",
+            details: String(error)
         });
     }
 }
