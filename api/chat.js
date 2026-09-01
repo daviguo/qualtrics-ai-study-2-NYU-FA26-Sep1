@@ -1,152 +1,227 @@
 import { neon } from "@neondatabase/serverless";
 
+
+/* =========================================================
+   STUDY CONFIGURATION
+========================================================= */
+
 const MODEL = "gpt-5.6-luna";
-const PROMPT_VERSION = "v2";
+
+const STUDY_VERSION =
+    "city_multiturn_v1";
+
+const PROMPT_VERSION =
+    "v3_city_multiturn";
+
+const TASK_UPDATE_VERSION =
+    "hotel_call_v1";
+
 const MAX_TURNS = 12;
+
 const MAX_MESSAGE_LENGTH = 1200;
 
 
-/* ---------------------------------------------------------
-   COMMON STUDY INSTRUCTIONS
---------------------------------------------------------- */
+/*
+  Only these cities are valid.
+
+  The browser is not allowed to create arbitrary destinations.
+*/
+
+const ALLOWED_CITIES = new Set([
+    "Denver, Colorado",
+    "Austin, Texas",
+    "Seattle, Washington",
+    "Nashville, Tennessee",
+    "Portland, Oregon",
+    "Minneapolis, Minnesota",
+    "Pittsburgh, Pennsylvania",
+    "St. Louis, Missouri"
+]);
+
+
+/* =========================================================
+   COMMON MODEL INSTRUCTIONS
+========================================================= */
 
 const COMMON_INSTRUCTIONS = `
 You are an AI travel-planning assistant.
 
-The participant is imagining a weekend trip to a large U.S. city
-in another state that they have never visited before.
+The user is planning a Saturday during a weekend trip.
 
-The destination must remain intentionally unspecified throughout
-the entire conversation.
+They arrived Friday evening, are staying at a downtown hotel,
+and do not have a rental car.
 
-Do not ask the participant to name, choose, or identify a city,
-state, neighborhood, destination, or geographic location.
-
-Do not mention specific city names, state names, neighborhoods,
-landmarks, restaurants, museums, transit systems, or other
-identifiable locations.
-
-The participant is staying at a downtown hotel and does not have
-a rental car.
-
-Their goal is to obtain a relaxed Saturday itinerary that:
+Their planning goal is to obtain a relaxed Saturday itinerary that:
 
 1. begins no earlier than 10:00 a.m.;
 2. includes a major museum or cultural attraction;
-3. includes a lunch option where typical entrees cost no more
+3. includes a lunch option where a typical entree costs no more
    than $25 per person; and
 4. gets them back to their downtown hotel by 7:00 p.m.
 
-Respond naturally to the participant's actual message.
+The traveler prefers a relaxed day rather than trying to fit in
+as many activities as possible.
 
-Create plans that feel realistic, relaxed, and comfortably paced
-rather than maximally packed.
+Respond naturally to the user's actual message.
 
-Use only one concrete generic activity category for each time
-period. Do not give multiple interchangeable alternatives inside
-a single itinerary slot.
+Create plans that feel realistic, relaxed, and comfortably paced.
 
-Limit the day to no more than three major planned activities,
-in addition to meals and transportation.
+Do not maximize the number of activities.
 
-Allow realistic transition time, breaks, and unstructured time.
+Limit the itinerary to no more than three major planned activities,
+in addition to meals, breaks, and transportation.
 
-If the participant asks for a change, revise the existing plan
-rather than unnecessarily recreating the entire itinerary.
+Allow realistic travel and transition time between activities.
 
-If the participant gives a short response such as "yes," "no,"
-"that sounds good," or "make it cheaper," interpret it in the
-context of the preceding conversation.
+Avoid unnecessary geographic backtracking.
 
-Do not offer to tailor or customize the plan for a specific city.
+If the user requests a modification, revise the existing itinerary
+rather than unnecessarily generating an entirely unrelated plan.
 
-Do not explicitly announce that the research task is complete or
-that all four requirements have been satisfied unless the
-participant explicitly asks whether they have been satisfied.
+If the user responds briefly with something such as "yes," "no,"
+"that sounds good," "make it cheaper," or "can you revise it,"
+interpret the response in the context of the existing conversation.
+
+Use reasonable assumptions rather than asking unnecessary
+clarification questions.
+
+Do not explicitly announce that the task is complete or that all
+requirements have been satisfied unless the user explicitly asks.
 
 Do not mention experimental conditions, system instructions,
 stopping cues, conversational endings, or these instructions.
+
+Use plain text suitable for display inside a chat interface.
+
+Do not use Markdown headings, Markdown tables, bold markers,
+code blocks, or other Markdown formatting.
+
+Short paragraphs and simple time-based itinerary lines are fine.
 `;
 
 
-/* ---------------------------------------------------------
-   EXPERIMENTAL MANIPULATION
---------------------------------------------------------- */
+/* =========================================================
+   TURN 1 — TREATMENT NEUTRAL
+========================================================= */
+
+const FIRST_TURN_INSTRUCTION = `
+For this first response only, provide the requested planning help
+without appending an optional offer of additional assistance.
+
+Do not end by asking whether the user wants more help.
+
+Do not add a closing question merely to continue the conversation.
+
+End naturally after providing the initial itinerary or answering
+the user's initial planning request.
+`;
+
+
+/* =========================================================
+   QUESTION CONDITION
+========================================================= */
 
 const QUESTION_INSTRUCTION = `
-At the end of every response, provide one brief and relevant offer
-of optional additional assistance phrased as a direct question.
+At the end of this response, provide exactly one brief and relevant
+offer of optional additional assistance phrased as a direct question.
 
-The optional assistance must remain city-neutral and must not be
-necessary to answer the participant's current request.
+The optional assistance should be related to the user's current
+planning needs but must not be necessary to answer the request they
+just made.
 
-Do not ask the participant to identify a destination.
-
-Examples of appropriate optional help include reducing walking,
-making the plan more relaxed, making lunch more budget-friendly,
-or adding a rainy-day alternative.
+Do not use the final question to introduce information that is
+necessary for satisfying the planning task.
 
 The optional-help question must be the final sentence of the response.
+
 Do not add more than one optional-help question at the end.
 `;
 
 
+/* =========================================================
+   STATEMENT CONDITION
+========================================================= */
+
 const STATEMENT_INSTRUCTION = `
-At the end of every response, provide one brief and relevant offer
-of optional additional assistance phrased as a declarative statement.
+At the end of this response, provide exactly one brief and relevant
+offer of optional additional assistance phrased as a declarative
+statement rather than a question.
 
-The optional assistance must remain city-neutral and must not be
-necessary to answer the participant's current request.
+The optional assistance should be related to the user's current
+planning needs but must not be necessary to answer the request they
+just made.
 
-Do not invite the participant to identify a destination.
-
-Examples of appropriate optional help include reducing walking,
-making the plan more relaxed, making lunch more budget-friendly,
-or adding a rainy-day alternative.
+Do not use the final offer to introduce information that is
+necessary for satisfying the planning task.
 
 The optional-help statement must be the final sentence of the response.
+
 Do not phrase the final optional-help offer as a question.
 `;
 
 
-/* ---------------------------------------------------------
+/* =========================================================
+   STANDARDIZED TRIP UPDATE
+========================================================= */
+
+const STANDARDIZED_UPDATE = `
+The traveler has just learned that they need to return to their
+downtown hotel from 3:30 p.m. to 4:00 p.m. for a scheduled video call.
+
+They may go out again afterward, but the day should still feel relaxed
+and they must still be back at their downtown hotel by 7:00 p.m.
+`;
+
+
+/* =========================================================
    CORS
---------------------------------------------------------- */
+========================================================= */
 
 function getAllowedOrigins() {
 
-    return (process.env.ALLOWED_ORIGINS || "")
+    return (
+        process.env.ALLOWED_ORIGINS || ""
+    )
         .split(",")
-        .map(x => x.trim())
+        .map(function (x) {
+            return x.trim();
+        })
         .filter(Boolean);
 }
 
 
 function applyCors(req, res) {
 
-    const origin = req.headers.origin;
+    const origin =
+        req.headers.origin;
 
-    const allowedOrigins = getAllowedOrigins();
+    const allowedOrigins =
+        getAllowedOrigins();
+
 
     if (
         origin &&
         allowedOrigins.includes(origin)
     ) {
+
         res.setHeader(
             "Access-Control-Allow-Origin",
             origin
         );
     }
 
+
     res.setHeader(
         "Access-Control-Allow-Methods",
         "POST, OPTIONS"
     );
 
+
     res.setHeader(
         "Access-Control-Allow-Headers",
         "Content-Type"
     );
+
 
     res.setHeader(
         "Vary",
@@ -155,34 +230,44 @@ function applyCors(req, res) {
 }
 
 
-/* ---------------------------------------------------------
-   RESPONSE TEXT EXTRACTION
---------------------------------------------------------- */
+/* =========================================================
+   EXTRACT ASSISTANT TEXT
+========================================================= */
 
 function extractAssistantText(data) {
 
     const messageItem =
         data.output?.find(
-            item => item.type === "message"
+            function (item) {
+                return item.type === "message";
+            }
         );
+
 
     const textItem =
         messageItem?.content?.find(
-            item => item.type === "output_text"
+            function (item) {
+                return item.type === "output_text";
+            }
         );
+
 
     return textItem?.text || "";
 }
 
 
-/* ---------------------------------------------------------
-   API HANDLER
---------------------------------------------------------- */
+/* =========================================================
+   MAIN API HANDLER
+========================================================= */
 
 export default async function handler(req, res) {
 
     applyCors(req, res);
 
+
+    /* -----------------------------------------------------
+       Preflight
+    ----------------------------------------------------- */
 
     if (req.method === "OPTIONS") {
 
@@ -192,6 +277,10 @@ export default async function handler(req, res) {
     }
 
 
+    /* -----------------------------------------------------
+       POST only
+    ----------------------------------------------------- */
+
     if (req.method !== "POST") {
 
         return res.status(405).json({
@@ -200,13 +289,16 @@ export default async function handler(req, res) {
     }
 
 
-    /* ---------------------------------------------
-       Block unknown browser origins
-    --------------------------------------------- */
+    /* -----------------------------------------------------
+       Origin check
+    ----------------------------------------------------- */
 
-    const origin = req.headers.origin;
+    const origin =
+        req.headers.origin;
 
-    const allowedOrigins = getAllowedOrigins();
+    const allowedOrigins =
+        getAllowedOrigins();
+
 
     if (
         origin &&
@@ -221,6 +313,10 @@ export default async function handler(req, res) {
 
     try {
 
+        /* =================================================
+           PARSE REQUEST
+        ================================================= */
+
         const body =
             typeof req.body === "string"
                 ? JSON.parse(req.body)
@@ -231,15 +327,16 @@ export default async function handler(req, res) {
             session_id,
             client_message_id,
             condition,
+            assigned_city,
             message,
             user_submit_epoch,
             chat_start_epoch
         } = body || {};
 
 
-        /* -----------------------------------------
-           Validate request
-        ----------------------------------------- */
+        /* =================================================
+           VALIDATION
+        ================================================= */
 
         if (
             !session_id ||
@@ -270,6 +367,29 @@ export default async function handler(req, res) {
 
             return res.status(400).json({
                 error: "Invalid condition"
+            });
+        }
+
+
+        if (
+            !assigned_city ||
+            typeof assigned_city !== "string"
+        ) {
+
+            return res.status(400).json({
+                error: "Missing assigned_city"
+            });
+        }
+
+
+        if (
+            !ALLOWED_CITIES.has(
+                assigned_city
+            )
+        ) {
+
+            return res.status(400).json({
+                error: "Invalid assigned_city"
             });
         }
 
@@ -313,18 +433,23 @@ export default async function handler(req, res) {
         }
 
 
+        /* =================================================
+           CONNECT TO NEON
+        ================================================= */
+
         const sql =
             neon(process.env.DATABASE_URL);
 
 
-        /* -----------------------------------------
-           Handle duplicate/retried browser requests
-        ----------------------------------------- */
+        /* =================================================
+           DUPLICATE REQUEST PROTECTION
+        ================================================= */
 
         const duplicate =
             await sql`
                 SELECT
                     turn_number,
+                    phase,
                     response_id,
                     assistant_text,
                     model_returned,
@@ -333,21 +458,29 @@ export default async function handler(req, res) {
                     input_tokens,
                     output_tokens,
                     total_tokens
+
                 FROM ai_turns
+
                 WHERE client_message_id =
                     ${client_message_id}
+
                 LIMIT 1
             `;
 
 
         if (duplicate.length > 0) {
 
-            const d = duplicate[0];
+            const d =
+                duplicate[0];
+
 
             return res.status(200).json({
 
                 turn_number:
                     d.turn_number,
+
+                phase:
+                    d.phase,
 
                 assistant_text:
                     d.assistant_text,
@@ -379,90 +512,163 @@ export default async function handler(req, res) {
         }
 
 
-        /* -----------------------------------------
-           Create or retrieve session
-        ----------------------------------------- */
+        /* =================================================
+           CREATE / LOAD SESSION
+        ================================================= */
 
-        let session =
+        let sessions =
             await sql`
-                SELECT *
+                SELECT
+                    session_id,
+                    condition,
+                    assigned_city,
+                    model_requested,
+                    prompt_version,
+                    study_version,
+                    task_update_version
+
                 FROM ai_sessions
+
                 WHERE session_id =
                     ${session_id}
+
                 LIMIT 1
             `;
 
 
         let storedCondition;
+        let storedCity;
 
 
-        if (session.length === 0) {
+        if (sessions.length === 0) {
+
+            /*
+              The first request permanently binds the
+              experimental condition and city to this session.
+            */
 
             await sql`
                 INSERT INTO ai_sessions (
+
                     session_id,
                     condition,
+                    assigned_city,
+
                     model_requested,
                     prompt_version,
+                    study_version,
+                    task_update_version,
+
                     chat_start_epoch
+
                 )
                 VALUES (
+
                     ${session_id},
                     ${condition},
+                    ${assigned_city},
+
                     ${MODEL},
                     ${PROMPT_VERSION},
+                    ${STUDY_VERSION},
+                    ${TASK_UPDATE_VERSION},
+
                     ${chat_start_epoch || null}
                 )
             `;
 
+
             storedCondition =
                 condition;
+
+            storedCity =
+                assigned_city;
 
         } else {
 
             storedCondition =
-                session[0].condition;
+                sessions[0].condition;
+
+            storedCity =
+                sessions[0].assigned_city;
+
+
+            /*
+              Backfill only for old pilot rows created
+              before assigned_city existed.
+            */
+
+            if (!storedCity) {
+
+                await sql`
+                    UPDATE ai_sessions
+
+                    SET
+                        assigned_city =
+                            ${assigned_city},
+
+                        study_version =
+                            ${STUDY_VERSION},
+
+                        task_update_version =
+                            ${TASK_UPDATE_VERSION},
+
+                        prompt_version =
+                            ${PROMPT_VERSION},
+
+                        updated_at =
+                            NOW()
+
+                    WHERE session_id =
+                        ${session_id}
+                `;
+
+
+                storedCity =
+                    assigned_city;
+            }
         }
 
 
-        /*
-         After Turn 1, use the condition stored on
-         the server rather than trusting the browser.
-        */
-
-
-        /* -----------------------------------------
-           Determine previous model response + turn
-        ----------------------------------------- */
+        /* =================================================
+           DETERMINE TURN NUMBER
+        ================================================= */
 
         const previousTurns =
             await sql`
                 SELECT
                     turn_number,
                     response_id
+
                 FROM ai_turns
+
                 WHERE session_id =
                     ${session_id}
+
                 ORDER BY turn_number DESC
+
                 LIMIT 1
             `;
 
 
         const previousResponseId =
-            previousTurns.length
+            previousTurns.length > 0
                 ? previousTurns[0].response_id
                 : null;
 
 
         const turnNumber =
-            previousTurns.length
+            previousTurns.length > 0
                 ? Number(
                     previousTurns[0].turn_number
                   ) + 1
                 : 1;
 
 
-        if (turnNumber > MAX_TURNS) {
+        if (
+            turnNumber >
+            MAX_TURNS
+        ) {
 
             return res.status(429).json({
                 error:
@@ -471,25 +677,153 @@ export default async function handler(req, res) {
         }
 
 
-        /* -----------------------------------------
-           Construct experimental instructions
-        ----------------------------------------- */
+        /* =================================================
+           SERVER-CONTROLLED PHASE
+        ================================================= */
 
-        const closingInstruction =
-            storedCondition === "question"
-                ? QUESTION_INSTRUCTION
-                : STATEMENT_INSTRUCTION;
+        /*
+          Do not rely on the browser to determine phase.
+
+          Turn 1 = initial planning.
+
+          Turn 2 and onward = post-update phase.
+        */
+
+        const phase =
+            turnNumber === 1
+                ? "initial"
+                : "post_update";
 
 
-        const instructions =
-            COMMON_INSTRUCTIONS +
-            "\n\n" +
-            closingInstruction;
+        /*
+          The standardized update is newly injected
+          only for Turn 2.
+        */
+
+        const taskContextInjected =
+            turnNumber === 2;
 
 
-        /* -----------------------------------------
-           Construct OpenAI request
-        ----------------------------------------- */
+        /* =================================================
+           CITY-SPECIFIC INSTRUCTIONS
+        ================================================= */
+
+        const cityInstructions = `
+The traveler's assigned destination is ${storedCity}.
+
+Use ${storedCity} as the destination throughout this conversation.
+
+Do not switch to another city and do not ask the traveler to select
+a different destination.
+
+You may recommend real museums, cultural attractions, neighborhoods,
+parks, restaurants, and other places in ${storedCity}.
+
+Prefer well-established places that you are confident actually exist.
+
+If you are uncertain that a named venue exists, use a reasonable
+generic description instead of inventing a place.
+
+Do not claim unsupported precision about current opening hours,
+ticket availability, live public-transit schedules, or exact prices.
+
+For the lunch requirement, choose an option that is reasonably
+consistent with a typical entree price of $25 or less per person.
+
+You may describe prices as approximate or typical rather than
+guaranteed current prices.
+`;
+
+
+        /* =================================================
+           TURN-SPECIFIC INSTRUCTIONS
+        ================================================= */
+
+        let instructions;
+
+
+        if (turnNumber === 1) {
+
+            /*
+              Turn 1 is treatment-neutral because the participant
+              will receive the standardized trip update next.
+            */
+
+            instructions =
+                COMMON_INSTRUCTIONS +
+                "\n\n" +
+                cityInstructions +
+                "\n\n" +
+                FIRST_TURN_INSTRUCTION;
+
+        } else {
+
+            /*
+              Experimental manipulation begins on Turn 2.
+            */
+
+            const closingInstruction =
+                storedCondition === "question"
+                    ? QUESTION_INSTRUCTION
+                    : STATEMENT_INSTRUCTION;
+
+
+            instructions =
+                COMMON_INSTRUCTIONS +
+                "\n\n" +
+                cityInstructions +
+                "\n\n" +
+                closingInstruction;
+        }
+
+
+        /* =================================================
+           MODEL INPUT
+        ================================================= */
+
+        let modelInput =
+            message.trim();
+
+
+        /*
+          Turn 2 is where the standardized update must enter
+          the model's conversation context.
+
+          The participant does NOT need to repeat the update.
+        */
+
+        if (turnNumber === 2) {
+
+            modelInput = `
+The traveler has just received the following new trip information:
+
+${STANDARDIZED_UPDATE}
+
+Treat this information as part of the traveler's current planning
+situation.
+
+Revise or adjust the existing itinerary appropriately in response
+to the traveler's message.
+
+The revised plan must account for the requirement that the traveler
+be at the downtown hotel from 3:30 p.m. to 4:00 p.m.
+
+The itinerary must still satisfy the original planning requirements,
+including returning to the downtown hotel by 7:00 p.m.
+
+Do not say that this information came from a research study,
+experiment, or study interface.
+
+The traveler's actual message is:
+
+${message.trim()}
+`;
+        }
+
+
+        /* =================================================
+           OPENAI REQUEST
+        ================================================= */
 
         const openAIRequest = {
 
@@ -507,7 +841,7 @@ export default async function handler(req, res) {
                 instructions,
 
             input:
-                message.trim(),
+                modelInput,
 
             store:
                 true,
@@ -520,17 +854,32 @@ export default async function handler(req, res) {
                 condition:
                     storedCondition,
 
+                assigned_city:
+                    storedCity,
+
+                phase:
+                    phase,
+
+                study_version:
+                    STUDY_VERSION,
+
                 prompt_version:
-                    PROMPT_VERSION
+                    PROMPT_VERSION,
+
+                task_update_version:
+                    TASK_UPDATE_VERSION
             }
         };
 
 
+        /*
+          Continue the existing model conversation.
+        */
+
         if (previousResponseId) {
 
-            openAIRequest
-                .previous_response_id =
-                    previousResponseId;
+            openAIRequest.previous_response_id =
+                previousResponseId;
         }
 
 
@@ -538,14 +887,15 @@ export default async function handler(req, res) {
             Date.now();
 
 
-        /* -----------------------------------------
-           Call OpenAI
-        ----------------------------------------- */
+        /* =================================================
+           CALL OPENAI
+        ================================================= */
 
         const openAIResponse =
             await fetch(
                 "https://api.openai.com/v1/responses",
                 {
+
                     method: "POST",
 
                     headers: {
@@ -576,18 +926,25 @@ export default async function handler(req, res) {
         if (!openAIResponse.ok) {
 
             console.error(
-                "OpenAI error:",
+                "OpenAI API error:",
                 data
             );
 
+
             return res.status(502).json({
+
                 error:
                     "Model request failed",
+
                 provider_status:
                     openAIResponse.status
             });
         }
 
+
+        /* =================================================
+           EXTRACT ASSISTANT TEXT
+        ================================================= */
 
         const assistantText =
             extractAssistantText(data);
@@ -600,6 +957,7 @@ export default async function handler(req, res) {
                 data
             );
 
+
             return res.status(502).json({
                 error:
                     "No assistant response text"
@@ -607,9 +965,9 @@ export default async function handler(req, res) {
         }
 
 
-        /* -----------------------------------------
-           Save the complete turn BEFORE returning it
-        ----------------------------------------- */
+        /* =================================================
+           SAVE TURN IN NEON
+        ================================================= */
 
         await sql`
             INSERT INTO ai_turns (
@@ -617,10 +975,14 @@ export default async function handler(req, res) {
                 session_id,
                 turn_number,
                 client_message_id,
+
                 condition,
+                phase,
+                task_context_injected,
 
                 user_text,
                 user_submit_epoch,
+
                 server_received_epoch,
 
                 previous_response_id,
@@ -647,10 +1009,14 @@ export default async function handler(req, res) {
                 ${session_id},
                 ${turnNumber},
                 ${client_message_id},
+
                 ${storedCondition},
+                ${phase},
+                ${taskContextInjected},
 
                 ${message.trim()},
                 ${user_submit_epoch || null},
+
                 ${serverReceivedEpoch},
 
                 ${previousResponseId},
@@ -674,14 +1040,17 @@ export default async function handler(req, res) {
         `;
 
 
-        /* -----------------------------------------
-           Return only what Qualtrics needs
-        ----------------------------------------- */
+        /* =================================================
+           RETURN RESPONSE TO QUALTRICS
+        ================================================= */
 
         return res.status(200).json({
 
             turn_number:
                 turnNumber,
+
+            phase:
+                phase,
 
             assistant_text:
                 assistantText,
@@ -716,9 +1085,14 @@ export default async function handler(req, res) {
             error
         );
 
+
         return res.status(500).json({
+
             error:
-                "Internal server error"
+                "Internal server error",
+
+            details:
+                String(error)
         });
     }
 }
