@@ -8,13 +8,13 @@ import { neon } from "@neondatabase/serverless";
 const MODEL = "gpt-5.6-luna";
 
 const STUDY_VERSION =
-    "city_multiturn_v1";
+    "city_multiturn_museum_v2";
 
 const PROMPT_VERSION =
-    "v3_city_multiturn";
+    "v4_museum_repair";
 
 const TASK_UPDATE_VERSION =
-    "hotel_call_v1";
+    "museum_unavailable_v1";
 
 const MAX_TURNS = 12;
 
