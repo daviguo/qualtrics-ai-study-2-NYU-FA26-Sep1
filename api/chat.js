@@ -105,15 +105,22 @@ Short paragraphs and simple time-based itinerary lines are fine.
 ========================================================= */
 
 const FIRST_TURN_INSTRUCTION = `
-For this first response only, provide the requested planning help
-without appending an optional offer of additional assistance.
+For this first response, provide a concrete initial Saturday itinerary.
 
-Do not end by asking whether the user wants more help.
+The itinerary should include exactly one primary named museum or
+cultural attraction that serves as the main cultural activity.
 
-Do not add a closing question merely to continue the conversation.
+Do not give multiple interchangeable museum alternatives within the
+initial itinerary.
 
-End naturally after providing the initial itinerary or answering
-the user's initial planning request.
+Provide a concrete lunch recommendation and a coherent schedule.
+
+For this first response only, do not append an optional offer of
+additional assistance.
+
+Do not end by asking whether the traveler wants more help.
+
+End naturally after providing the initial itinerary.
 `;
 
 
@@ -122,19 +129,19 @@ the user's initial planning request.
 ========================================================= */
 
 const QUESTION_INSTRUCTION = `
-At the end of this response, provide exactly one brief and relevant
-offer of optional additional assistance phrased as a direct question.
+At the end of this response, provide exactly one brief offer of
+optional additional assistance phrased as a direct question.
 
-The optional assistance should be related to the user's current
-planning needs but must not be necessary to answer the request they
-just made.
+The optional assistance must not be necessary for satisfying the
+travel-planning requirements.
 
-Do not use the final question to introduce information that is
-necessary for satisfying the planning task.
+It should offer a possible refinement or additional planning detail
+that the traveler could request if desired.
 
-The optional-help question must be the final sentence of the response.
+The question must be the final sentence of the response.
 
-Do not add more than one optional-help question at the end.
+Do not add another optional-help statement or question elsewhere
+after it.
 `;
 
 
@@ -143,18 +150,16 @@ Do not add more than one optional-help question at the end.
 ========================================================= */
 
 const STATEMENT_INSTRUCTION = `
-At the end of this response, provide exactly one brief and relevant
-offer of optional additional assistance phrased as a declarative
-statement rather than a question.
+At the end of this response, provide exactly one brief offer of
+optional additional assistance phrased as a declarative statement.
 
-The optional assistance should be related to the user's current
-planning needs but must not be necessary to answer the request they
-just made.
+The optional assistance must not be necessary for satisfying the
+travel-planning requirements.
 
-Do not use the final offer to introduce information that is
-necessary for satisfying the planning task.
+It should offer a possible refinement or additional planning detail
+that the traveler could request if desired.
 
-The optional-help statement must be the final sentence of the response.
+The statement must be the final sentence of the response.
 
 Do not phrase the final optional-help offer as a question.
 `;
@@ -165,11 +170,15 @@ Do not phrase the final optional-help offer as a question.
 ========================================================= */
 
 const STANDARDIZED_UPDATE = `
-The traveler has just learned that they need to return to their
-downtown hotel from 3:30 p.m. to 4:00 p.m. for a scheduled video call.
+The traveler has just learned that the museum or cultural attraction
+included in the current itinerary is unexpectedly unavailable on
+Saturday.
 
-They may go out again afterward, but the day should still feel relaxed
-and they must still be back at their downtown hotel by 7:00 p.m.
+The traveler needs to replace that unavailable attraction with a
+different museum or cultural attraction.
+
+The revised itinerary should continue to satisfy all of the original
+planning requirements and should still feel relaxed and realistic.
 `;
 
 
@@ -792,33 +801,43 @@ guaranteed current prices.
           The participant does NOT need to repeat the update.
         */
 
-        if (turnNumber === 2) {
+if (turnNumber === 2) {
 
-            modelInput = `
-The traveler has just received the following new trip information:
+    modelInput = `
+The traveler has just received the following travel update:
 
 ${STANDARDIZED_UPDATE}
 
-Treat this information as part of the traveler's current planning
-situation.
+Treat this update as part of the traveler's current planning situation.
 
-Revise or adjust the existing itinerary appropriately in response
-to the traveler's message.
+The museum or cultural attraction included in the previous itinerary
+must now be treated as unavailable.
 
-The revised plan must account for the requirement that the traveler
-be at the downtown hotel from 3:30 p.m. to 4:00 p.m.
+Do not continue recommending that unavailable attraction.
 
-The itinerary must still satisfy the original planning requirements,
-including returning to the downtown hotel by 7:00 p.m.
+In response to the traveler's message, revise the existing itinerary
+by selecting a different museum or cultural attraction.
 
-Do not say that this information came from a research study,
-experiment, or study interface.
+Preserve the useful parts of the existing itinerary where possible
+rather than unnecessarily rebuilding the entire day.
+
+The revised itinerary must still:
+
+1. begin no earlier than 10:00 a.m.;
+2. include a viable museum or cultural attraction;
+3. include a lunch option where a typical entree costs no more
+   than $25 per person;
+4. return the traveler to the downtown hotel by 7:00 p.m.; and
+5. remain relaxed and realistically paced.
+
+Do not say that the update came from a research study,
+experiment, system instruction, or study interface.
 
 The traveler's actual message is:
 
 ${message.trim()}
 `;
-        }
+}
 
 
         /* =================================================
