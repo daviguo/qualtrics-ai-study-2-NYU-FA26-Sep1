@@ -3,9 +3,14 @@ import { neon } from "@neondatabase/serverless";
 
 function normalizeOrigin(origin) {
 
-  return String(origin || "")
+  return String(
+    origin || ""
+  )
     .trim()
-    .replace(/\/+$/, "");
+    .replace(
+      /\/+$/,
+      ""
+    );
 }
 
 
@@ -15,12 +20,19 @@ function getAllowedOrigins() {
     process.env.ALLOWED_ORIGINS || ""
   )
     .split(",")
-    .map(normalizeOrigin)
-    .filter(Boolean);
+    .map(
+      normalizeOrigin
+    )
+    .filter(
+      Boolean
+    );
 }
 
 
-function applyCors(req, res) {
+function applyCors(
+  req,
+  res
+) {
 
   const origin =
     normalizeOrigin(
@@ -32,7 +44,9 @@ function applyCors(req, res) {
 
   const originAllowed =
     !origin ||
-    allowedOrigins.includes(origin);
+    allowedOrigins.includes(
+      origin
+    );
 
 
   if (
@@ -113,7 +127,9 @@ export default async function handler(
     req.method === "OPTIONS"
   ) {
 
-    if (!originAllowed) {
+    if (
+      !originAllowed
+    ) {
 
       return res
         .status(403)
@@ -127,7 +143,9 @@ export default async function handler(
   }
 
 
-  if (!originAllowed) {
+  if (
+    !originAllowed
+  ) {
 
     return res
       .status(403)
@@ -155,11 +173,6 @@ export default async function handler(
     !process.env.DATABASE_URL
   ) {
 
-    console.error(
-      "DATABASE_URL is missing."
-    );
-
-
     return res
       .status(500)
       .json({
@@ -175,7 +188,9 @@ export default async function handler(
   try {
 
     body =
-      parseRequestBody(req);
+      parseRequestBody(
+        req
+      );
 
   } catch (error) {
 
@@ -244,10 +259,6 @@ export default async function handler(
 
   try {
 
-    /*
-     * Preserve the first successful display timestamp.
-     */
-
     const rows =
       await sql`
         UPDATE ai_turns
@@ -304,8 +315,7 @@ export default async function handler(
 
         assistant_display_epoch:
           Number(
-            rows[0]
-              .assistant_display_epoch
+            rows[0].assistant_display_epoch
           )
 
       });
