@@ -13,7 +13,7 @@ const STUDY_VERSION =
   "dinner_single_stage_v1";
 
 const PROMPT_VERSION =
-  "dinner_refinable_v1";
+  "dinner_refinable_fixed_first_offer_v2";
 
 const TASK_UPDATE_VERSION =
   "none";
@@ -26,6 +26,26 @@ const MAX_PRIORITIES_LENGTH = 500;
 
 const OPENAI_URL =
   "https://api.openai.com/v1/responses";
+
+
+/*
+ * ============================================================
+ * EXPERIMENTAL MANIPULATION
+ * ============================================================
+ *
+ * CRITICAL:
+ *
+ * The semantic content of the FIRST closing is held exactly
+ * constant across conditions.
+ *
+ * Only its interrogative vs. declarative form changes.
+ *
+ * The OpenAI model does NOT know the participant's condition.
+ * ============================================================
+ */
+
+const FIRST_TURN_OPTIONAL_OFFER =
+  "turn this into a shopping and prep checklist";
 
 
 /*
@@ -169,9 +189,18 @@ function buildInstructions(
   turnNumber
 ) {
 
-  const firstTurnSection =
-    turnNumber === 1
-      ? `
+  let turnSpecificInstructions;
+
+
+  /*
+   * ----------------------------------------------------------
+   * TURN 1
+   * ----------------------------------------------------------
+   */
+
+  if (turnNumber === 1) {
+
+    turnSpecificInstructions = `
 FIRST RESPONSE REQUIREMENTS
 
 This is the first assistant response in the conversation.
@@ -179,42 +208,98 @@ This is the first assistant response in the conversation.
 Provide one coherent and substantively complete dinner plan.
 
 The participant should have enough information after this response
-to use the plan without needing another message.
+to use the dinner plan without needing another message.
 
-The plan should clearly satisfy all four required planning goals.
+The response should clearly satisfy all four required planning goals.
 
-Provide one recommended plan rather than a long menu of
-interchangeable alternatives.
+Give one recommended plan rather than a long menu of interchangeable
+alternatives.
 
 Aim for approximately 250 to 350 words in response_body.
 
-Do not proactively provide every possible adjacent service.
-For example, unless directly necessary, do not include an exhaustive
-grocery list, multiple backup menus, beverage pairings, decorating
-ideas, extensive substitutions, or numerous alternative meals.
+The response must be COMPLETE but not EXHAUSTIVE.
 
-The response should be complete but not exhaustive.
-`
-      : `
+The participant needs a simple preparation strategy because that is
+part of the required task. Provide that strategy.
+
+However, do NOT provide a full shopping list or a detailed shopping
+and preparation checklist in this first response.
+
+Do not proactively provide every possible adjacent service.
+
+Unless directly required by the task, do not provide:
+
+- a full grocery checklist;
+- an exhaustive preparation checklist;
+- multiple backup menus;
+- beverage pairings;
+- decorating advice;
+- several alternative main courses;
+- extensive substitutions;
+- numerous optional add-ons.
+
+The application will append a standardized optional-help closing
+after response_body.
+
+The standardized optional service concerns turning the dinner plan
+into a shopping and prep checklist.
+
+Do NOT mention that future offer in response_body.
+
+Do NOT say that you can create a shopping list or prep checklist.
+
+Do NOT ask whether the participant wants a shopping list or prep
+checklist.
+
+Do NOT anticipate, duplicate, or refer to the standardized closing.
+
+The optional_offer field that you generate on this first turn will
+NOT determine what the participant sees. The application will replace
+it with a standardized offer.
+`;
+
+  } else {
+
+    /*
+     * --------------------------------------------------------
+     * TURNS 2+
+     * --------------------------------------------------------
+     */
+
+    turnSpecificInstructions = `
 FOLLOW-UP RESPONSE REQUIREMENTS
 
 This is a later conversational turn.
 
 Respond directly to the participant's newest request.
 
-Use the existing dinner plan as context and revise it when appropriate.
+Use the existing dinner plan as conversational context.
+
+Revise the existing plan when appropriate.
 
 Do not unnecessarily repeat the complete dinner plan if a focused
-answer or revision would adequately address the participant's request.
+answer or targeted revision adequately addresses the participant's
+request.
 
 If the participant accepts the optional assistance offered in the
 previous closing, provide that assistance directly.
+
+For this and later responses, generate a contextually appropriate
+optional_offer according to the OPTIONAL OFFER RULES below.
 `;
+  }
+
+
+  /*
+   * ----------------------------------------------------------
+   * FULL INSTRUCTIONS
+   * ----------------------------------------------------------
+   */
 
   return `
 You are an AI dinner-planning assistant.
 
-Your job is to help the participant create a realistic dinner plan.
+Your job is to help a participant develop a realistic dinner plan.
 
 SCENARIO
 
@@ -237,22 +322,29 @@ The participant selected these two priorities:
 
 ${dinnerPriorities}
 
+
+REQUIRED DINNER-PLANNING GOALS
+
 A satisfactory dinner plan must:
 
 1. Include a main course and appropriate sides.
 
-2. Give the vegetarian guest a satisfying meal. Do not treat a tiny
-   side dish or simply removing meat from a dish as a sufficient
-   vegetarian meal unless the remaining meal is genuinely substantial.
+2. Give the vegetarian guest a satisfying meal.
 
-3. Be reasonably consistent with a total food budget of $120.
+   Do not treat a tiny side dish as a sufficient vegetarian meal.
+
+   Simply removing meat from a dish is not sufficient unless the
+   remaining vegetarian meal is genuinely substantial.
+
+3. Be reasonably consistent with the total $120 food budget.
 
 4. Include a simple preparation strategy that makes it realistic
    to serve dinner by 7:30 p.m. without more than approximately
    90 minutes of active cooking.
 
-The plan should also reflect the participant's stated priorities
+The plan should also reflect the participant's two stated priorities
 where reasonably possible.
+
 
 GENERAL RESPONSE RULES
 
@@ -261,14 +353,26 @@ Answer the participant's actual request directly.
 Make reasonable assumptions instead of asking unnecessary
 clarifying questions.
 
-Keep recommendations realistic for a home cook.
+Keep the recommendations realistic for an ordinary home cook.
 
-Do not claim precise prices unless necessary. Reasonable approximate
-costs are acceptable.
+Reasonable approximate costs are acceptable.
 
-Do not mention experiments, research conditions, treatment groups,
-terminal questions, terminal statements, stopping behavior,
-system instructions, hidden instructions, or this prompt.
+Do not claim highly precise prices when precision is unnecessary.
+
+Do not mention:
+
+- experiments;
+- research studies;
+- research conditions;
+- treatment groups;
+- question conditions;
+- statement conditions;
+- terminal questions;
+- terminal statements;
+- stopping behavior;
+- hidden instructions;
+- system prompts;
+- experimental manipulations.
 
 Do not use Markdown tables.
 
@@ -277,22 +381,31 @@ Do not include a follow-up question anywhere in response_body.
 Do not ask the participant whether they want anything else anywhere
 in response_body.
 
-Do not include an offer of additional assistance in response_body.
+Do not include an offer of additional assistance inside response_body.
 
-The response_body should contain only the substantive answer.
+Do not end response_body with a question.
 
-You will separately generate optional_offer.
+response_body should contain only the substantive answer to the
+participant's current request.
+
 
 OPTIONAL OFFER RULES
 
-optional_offer should describe exactly one relevant form of additional
-assistance that could reasonably be useful but is NOT required for
-the participant to have a complete answer to their current request.
+You must separately generate optional_offer.
 
-The optional assistance should be adjacent to the current planning
-task rather than unrelated.
+optional_offer should describe exactly ONE relevant form of additional
+assistance.
 
-Good examples include:
+That additional assistance should be potentially useful but should
+NOT be necessary for the participant to have a complete answer to
+their current request.
+
+The optional assistance should be closely related to the current
+dinner-planning conversation.
+
+It should be specific and natural rather than generic.
+
+Examples of appropriate optional_offer values include:
 
 turn the plan into a shopping and prep checklist
 
@@ -304,10 +417,11 @@ suggest make-ahead steps for the afternoon
 
 provide a serving timeline for the final hour
 
-The offer should be specific enough to sound natural in context.
+suggest an easy nonalcoholic drink pairing
 
-The optional_offer must be a short bare verb phrase that works
-grammatically after BOTH:
+The optional_offer must be a short bare verb phrase.
+
+It must work grammatically after BOTH of these stems:
 
 "Would you like me to ..."
 
@@ -320,25 +434,35 @@ For example:
 "turn the plan into a shopping and prep checklist"
 
 Do NOT begin optional_offer with:
+
 "to"
+
 "Would you like"
+
 "Would you like me"
+
 "I can"
+
 "I can also"
 
-Do NOT end optional_offer with a question mark, period,
-exclamation point, or other closing punctuation.
+Do NOT put a question mark in optional_offer.
 
-Do NOT place the experimental question or statement wording
-inside optional_offer.
+Do NOT end optional_offer with a period, question mark,
+exclamation point, colon, or semicolon.
 
-${firstTurnSection}
+Do NOT include the question-condition wording inside optional_offer.
+
+Do NOT include the statement-condition wording inside optional_offer.
+
+
+${turnSpecificInstructions}
+
 
 OUTPUT REQUIREMENT
 
 Return only the structured output required by the supplied JSON schema.
 
-response_body must contain the substantive response.
+response_body must contain the substantive assistant response.
 
 optional_offer must contain only the short optional-help verb phrase.
 `;
@@ -347,7 +471,7 @@ optional_offer must contain only the short optional-help verb phrase.
 
 /*
  * ============================================================
- * OPENAI OUTPUT HELPERS
+ * OPENAI OUTPUT EXTRACTION
  * ============================================================
  */
 
@@ -363,6 +487,7 @@ function extractOutputText(responseData) {
     return "";
   }
 
+
   for (
     const item of responseData.output
   ) {
@@ -375,6 +500,7 @@ function extractOutputText(responseData) {
 
       continue;
     }
+
 
     for (
       const content of item.content
@@ -393,11 +519,18 @@ function extractOutputText(responseData) {
     }
   }
 
+
   return pieces
     .join("")
     .trim();
 }
 
+
+/*
+ * ============================================================
+ * CLEAN MODEL-GENERATED OPTIONAL OFFER
+ * ============================================================
+ */
 
 function cleanOptionalOffer(value) {
 
@@ -405,6 +538,7 @@ function cleanOptionalOffer(value) {
     String(value || "")
       .replace(/\s+/g, " ")
       .trim();
+
 
   offer =
     offer.replace(
@@ -438,7 +572,7 @@ function cleanOptionalOffer(value) {
 
   offer =
     offer.replace(
-      /[?.!]+$/g,
+      /[?.!;:]+$/g,
       ""
     );
 
@@ -451,15 +585,16 @@ function cleanOptionalOffer(value) {
   offer =
     offer.trim();
 
+
   if (!offer) {
 
     offer =
       "help you refine the dinner plan further";
   }
 
+
   /*
-   * Keep pathological model output from creating an
-   * extremely long terminal sentence.
+   * Prevent unexpectedly long terminal sentences.
    */
 
   if (
@@ -472,9 +607,21 @@ function cleanOptionalOffer(value) {
         .trim();
   }
 
+
   return offer;
 }
 
+
+/*
+ * ============================================================
+ * CREATE EXPERIMENTAL CLOSING
+ * ============================================================
+ *
+ * The model NEVER performs this transformation.
+ *
+ * Vercel deterministically changes only the grammatical form.
+ * ============================================================
+ */
 
 function makeClosing(
   condition,
@@ -492,6 +639,7 @@ function makeClosing(
     );
   }
 
+
   return (
     "I can also " +
     optionalOffer +
@@ -502,7 +650,7 @@ function makeClosing(
 
 /*
  * ============================================================
- * MAIN HANDLER
+ * MAIN API HANDLER
  * ============================================================
  */
 
@@ -523,6 +671,7 @@ export default async function handler(
       res
     );
 
+
   if (
     req.method === "OPTIONS"
   ) {
@@ -538,6 +687,7 @@ export default async function handler(
       .status(204)
       .end();
   }
+
 
   if (!originAllowed) {
 
@@ -591,6 +741,7 @@ export default async function handler(
       });
   }
 
+
   if (
     !process.env.DATABASE_URL
   ) {
@@ -607,6 +758,7 @@ export default async function handler(
       });
   }
 
+
   const sql =
     neon(
       process.env.DATABASE_URL
@@ -620,6 +772,7 @@ export default async function handler(
    */
 
   let body;
+
 
   try {
 
@@ -642,35 +795,42 @@ export default async function handler(
       body.session_id || ""
     ).trim();
 
+
   const clientMessageId =
     String(
       body.client_message_id || ""
     ).trim();
+
 
   const requestedCondition =
     String(
       body.condition || ""
     ).trim();
 
+
   const requestedPriorities =
     String(
       body.dinner_priorities || ""
     ).trim();
+
 
   const message =
     String(
       body.message || ""
     ).trim();
 
+
   const userSubmitEpoch =
     Number(
       body.user_submit_epoch
     );
 
+
   const chatStartEpoch =
     Number(
       body.chat_start_epoch
     );
+
 
   const serverReceivedEpoch =
     Date.now();
@@ -683,7 +843,9 @@ export default async function handler(
    */
 
   if (
-    !isSafeId(sessionId)
+    !isSafeId(
+      sessionId
+    )
   ) {
 
     return res
@@ -694,8 +856,11 @@ export default async function handler(
       });
   }
 
+
   if (
-    !isSafeId(clientMessageId)
+    !isSafeId(
+      clientMessageId
+    )
   ) {
 
     return res
@@ -705,6 +870,7 @@ export default async function handler(
           "Invalid client_message_id"
       });
   }
+
 
   if (
     requestedCondition !== "question" &&
@@ -718,6 +884,7 @@ export default async function handler(
           "Invalid condition"
       });
   }
+
 
   if (
     !requestedPriorities ||
@@ -733,6 +900,7 @@ export default async function handler(
       });
   }
 
+
   if (!message) {
 
     return res
@@ -743,9 +911,10 @@ export default async function handler(
       });
   }
 
+
   if (
     message.length >
-    MAX_MESSAGE_LENGTH
+      MAX_MESSAGE_LENGTH
   ) {
 
     return res
@@ -755,6 +924,7 @@ export default async function handler(
           "Message is too long"
       });
   }
+
 
   if (
     !isValidEpoch(
@@ -769,6 +939,7 @@ export default async function handler(
           "Invalid user_submit_epoch"
       });
   }
+
 
   if (
     !isValidEpoch(
@@ -785,15 +956,17 @@ export default async function handler(
   }
 
 
+  /*
+   * ==========================================================
+   * DATABASE / OPENAI LOGIC
+   * ==========================================================
+   */
+
   try {
 
     /*
      * --------------------------------------------------------
-     * DUPLICATE CLIENT-MESSAGE PROTECTION
-     *
-     * If the exact same client message has already been stored,
-     * return the stored assistant response rather than calling
-     * OpenAI again.
+     * DUPLICATE CLIENT MESSAGE PROTECTION
      * --------------------------------------------------------
      */
 
@@ -810,6 +983,7 @@ export default async function handler(
         LIMIT 1
       `;
 
+
     if (
       duplicateRows.length > 0
     ) {
@@ -817,9 +991,10 @@ export default async function handler(
       const duplicate =
         duplicateRows[0];
 
+
       if (
         duplicate.session_id !==
-        sessionId
+          sessionId
       ) {
 
         return res
@@ -830,21 +1005,31 @@ export default async function handler(
           });
       }
 
+
       return res
         .status(200)
         .json({
-          ok: true,
-          duplicate: true,
+
+          ok:
+            true,
+
+          duplicate:
+            true,
+
           session_id:
             sessionId,
+
           turn_number:
             Number(
               duplicate.turn_number
             ),
+
           response_id:
             duplicate.response_id,
+
           assistant_text:
             duplicate.assistant_text
+
         });
     }
 
@@ -939,7 +1124,8 @@ export default async function handler(
 
 
     /*
-     * Prevent accidental reuse of a travel-study session ID.
+     * Do not accidentally reuse a session from the prior
+     * travel experiment.
      */
 
     if (
@@ -958,8 +1144,7 @@ export default async function handler(
 
 
     /*
-     * If a dinner session was created before priorities were
-     * populated, safely bind them once.
+     * Backfill priorities if needed.
      */
 
     if (
@@ -985,6 +1170,7 @@ export default async function handler(
           ${sessionId}
       `;
 
+
       session.dinner_priorities =
         requestedPriorities;
     }
@@ -993,11 +1179,10 @@ export default async function handler(
     /*
      * IMPORTANT:
      *
-     * From this point onward, condition and priorities come from
-     * Neon, not from the browser request.
+     * After session creation, use the condition and priorities
+     * STORED IN NEON.
      *
-     * The participant/browser therefore cannot switch condition
-     * during the conversation.
+     * Do not allow later browser requests to switch treatment.
      */
 
     const storedCondition =
@@ -1005,26 +1190,27 @@ export default async function handler(
         session.condition || ""
       ).trim();
 
+
     const storedPriorities =
       String(
-        session.dinner_priorities ||
-        ""
+        session.dinner_priorities || ""
       ).trim();
 
 
     if (
-      storedCondition !==
-        "question" &&
-      storedCondition !==
-        "statement"
+      storedCondition !== "question" &&
+      storedCondition !== "statement"
     ) {
 
       throw new Error(
-        "Stored session condition is invalid."
+        "Stored condition is invalid."
       );
     }
 
-    if (!storedPriorities) {
+
+    if (
+      !storedPriorities
+    ) {
 
       throw new Error(
         "Stored dinner priorities are missing."
@@ -1034,7 +1220,7 @@ export default async function handler(
 
     /*
      * --------------------------------------------------------
-     * FIND PREVIOUS TURN
+     * GET PREVIOUS TURN
      * --------------------------------------------------------
      */
 
@@ -1052,10 +1238,13 @@ export default async function handler(
       `;
 
 
-    let turnNumber = 1;
+    let turnNumber =
+      1;
+
 
     let previousResponseId =
       null;
+
 
     let previousClosingText =
       "";
@@ -1068,26 +1257,28 @@ export default async function handler(
       const previous =
         previousRows[0];
 
+
       turnNumber =
         Number(
           previous.turn_number
         ) + 1;
 
+
       previousResponseId =
         previous.response_id ||
         null;
 
+
       previousClosingText =
         String(
-          previous.closing_text ||
-          ""
+          previous.closing_text || ""
         ).trim();
     }
 
 
     if (
       turnNumber >
-      MAX_TURNS
+        MAX_TURNS
     ) {
 
       return res
@@ -1114,6 +1305,13 @@ export default async function handler(
      * --------------------------------------------------------
      * BUILD MODEL INPUT
      * --------------------------------------------------------
+     *
+     * The exact treatment closing was created by Vercel after
+     * the previous OpenAI call.
+     *
+     * Therefore we explicitly tell OpenAI what sentence the
+     * participant actually saw.
+     * --------------------------------------------------------
      */
 
     let modelInput;
@@ -1129,19 +1327,19 @@ export default async function handler(
     } else {
 
       modelInput = `
-The participant saw the previous assistant response followed by
-this exact final sentence:
+The participant saw the previous assistant response followed by this
+exact final sentence:
 
 "${previousClosingText}"
 
-That final sentence was appended by the application after the
-substantive model response.
+That final sentence was added by the application after the substantive
+assistant response.
 
 Interpret the participant's new message in that conversational context.
 
-For example, if the participant says "yes", "sure", "okay", or another
-short acceptance, treat it as accepting the assistance offered in that
-final sentence.
+If the participant gives a short response such as "yes", "sure",
+"okay", "please", or another acceptance, interpret that response as
+accepting the assistance offered in the exact final sentence above.
 
 The participant's new message is:
 
@@ -1153,15 +1351,14 @@ ${message}
     /*
      * --------------------------------------------------------
      * BUILD OPENAI REQUEST
+     * --------------------------------------------------------
      *
-     * NOTE:
+     * CRITICAL:
      *
-     * condition is deliberately NOT sent to the model.
+     * CONDITION IS NOT SENT TO OPENAI.
      *
-     * The model generates treatment-neutral substantive content
-     * plus a treatment-neutral optional offer.
-     *
-     * Vercel creates the question/statement manipulation later.
+     * OpenAI therefore cannot make the substantive response
+     * different based on question vs. statement assignment.
      * --------------------------------------------------------
      */
 
@@ -1275,6 +1472,7 @@ ${message}
     const controller =
       new AbortController();
 
+
     const timeout =
       setTimeout(
         function () {
@@ -1326,8 +1524,7 @@ ${message}
 
       if (
         error &&
-        error.name ===
-          "AbortError"
+        error.name === "AbortError"
       ) {
 
         console.error(
@@ -1342,6 +1539,7 @@ ${message}
           });
       }
 
+
       throw error;
 
     } finally {
@@ -1354,11 +1552,12 @@ ${message}
 
     /*
      * --------------------------------------------------------
-     * PARSE OPENAI RESPONSE
+     * PARSE OPENAI HTTP RESPONSE
      * --------------------------------------------------------
      */
 
     let openAIData;
+
 
     try {
 
@@ -1407,7 +1606,7 @@ ${message}
     ) {
 
       console.error(
-        "OpenAI response did not complete:",
+        "OpenAI response status:",
         openAIData.status
       );
 
@@ -1420,13 +1619,21 @@ ${message}
     }
 
 
+    /*
+     * --------------------------------------------------------
+     * EXTRACT STRUCTURED OUTPUT TEXT
+     * --------------------------------------------------------
+     */
+
     const rawOutputText =
       extractOutputText(
         openAIData
       );
 
 
-    if (!rawOutputText) {
+    if (
+      !rawOutputText
+    ) {
 
       console.error(
         "No output_text found:",
@@ -1446,11 +1653,12 @@ ${message}
 
     /*
      * --------------------------------------------------------
-     * PARSE STRUCTURED MODEL OUTPUT
+     * PARSE JSON GENERATED UNDER STRICT SCHEMA
      * --------------------------------------------------------
      */
 
     let parsedOutput;
+
 
     try {
 
@@ -1462,7 +1670,7 @@ ${message}
     } catch (error) {
 
       console.error(
-        "Structured output JSON parse failed:",
+        "Structured output JSON parsing failed:",
         rawOutputText
       );
 
@@ -1475,15 +1683,22 @@ ${message}
     }
 
 
+    /*
+     * --------------------------------------------------------
+     * SUBSTANTIVE RESPONSE
+     * --------------------------------------------------------
+     */
+
     const responseBody =
       String(
-        parsedOutput
-          .response_body ||
+        parsedOutput.response_body ||
         ""
       ).trim();
 
 
-    if (!responseBody) {
+    if (
+      !responseBody
+    ) {
 
       return res
         .status(502)
@@ -1494,20 +1709,42 @@ ${message}
     }
 
 
-    const optionalOffer =
-      cleanOptionalOffer(
-        parsedOutput
-          .optional_offer
-      );
+    /*
+     * --------------------------------------------------------
+     * OPTIONAL OFFER
+     * --------------------------------------------------------
+     *
+     * TURN 1:
+     * Ignore the model-generated optional_offer.
+     * Use EXACTLY the same fixed semantic content for everyone.
+     *
+     * TURN 2+:
+     * Use the model's treatment-blind contextual offer.
+     * --------------------------------------------------------
+     */
+
+    let optionalOffer;
+
+
+    if (
+      turnNumber === 1
+    ) {
+
+      optionalOffer =
+        FIRST_TURN_OPTIONAL_OFFER;
+
+    } else {
+
+      optionalOffer =
+        cleanOptionalOffer(
+          parsedOutput.optional_offer
+        );
+    }
 
 
     /*
      * --------------------------------------------------------
-     * CREATE EXPERIMENTAL CLOSING
-     *
-     * This is where treatment occurs.
-     *
-     * The model does NOT know condition.
+     * CREATE TREATMENT CLOSING
      * --------------------------------------------------------
      */
 
@@ -1517,6 +1754,12 @@ ${message}
         optionalOffer
       );
 
+
+    /*
+     * --------------------------------------------------------
+     * WHAT PARTICIPANT ACTUALLY SEES
+     * --------------------------------------------------------
+     */
 
     const assistantText =
       responseBody +
@@ -1577,7 +1820,7 @@ ${message}
 
     /*
      * --------------------------------------------------------
-     * TURN METADATA
+     * RESPONSE METADATA
      * --------------------------------------------------------
      */
 
@@ -1593,7 +1836,9 @@ ${message}
       ).trim();
 
 
-    if (!responseId) {
+    if (
+      !responseId
+    ) {
 
       throw new Error(
         "OpenAI response ID is missing."
@@ -1666,8 +1911,7 @@ ${message}
     } catch (insertError) {
 
       /*
-       * If a duplicate request raced with this request,
-       * return the already-saved response.
+       * Handle race-condition duplicate retries.
        */
 
       const raceDuplicateRows =
@@ -1686,38 +1930,50 @@ ${message}
 
       if (
         raceDuplicateRows.length > 0 &&
-        raceDuplicateRows[0]
-          .session_id ===
+        raceDuplicateRows[0].session_id ===
           sessionId
       ) {
 
         const existing =
           raceDuplicateRows[0];
 
+
         return res
           .status(200)
           .json({
-            ok: true,
-            duplicate: true,
+
+            ok:
+              true,
+
+            duplicate:
+              true,
+
             session_id:
               sessionId,
+
             turn_number:
               Number(
                 existing.turn_number
               ),
+
             response_id:
               existing.response_id,
+
             assistant_text:
               existing.assistant_text
+
           });
       }
+
 
       throw insertError;
     }
 
 
     /*
-     * Update session timestamp.
+     * --------------------------------------------------------
+     * UPDATE SESSION TIMESTAMP
+     * --------------------------------------------------------
      */
 
     await sql`
@@ -1732,7 +1988,7 @@ ${message}
 
     /*
      * --------------------------------------------------------
-     * RETURN TO QUALTRICS
+     * RETURN RESPONSE TO QUALTRICS
      * --------------------------------------------------------
      */
 
@@ -1784,6 +2040,7 @@ ${message}
       error
     );
 
+
     return res
       .status(500)
       .json({
@@ -1792,4 +2049,3 @@ ${message}
       });
   }
 }
-
