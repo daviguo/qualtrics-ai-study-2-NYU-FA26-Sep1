@@ -36,10 +36,13 @@ export default async function handler(
         "dinner_single_stage_v1",
 
       prompt_version:
-        "dinner_refinable_v1",
+        "dinner_refinable_fixed_first_offer_v2",
 
       model:
         "gpt-5.6-luna",
+
+      first_turn_optional_offer:
+        "turn this into a shopping and prep checklist",
 
       timestamp:
         Date.now()
