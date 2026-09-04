@@ -3,9 +3,14 @@ import { neon } from "@neondatabase/serverless";
 
 function normalizeOrigin(origin) {
 
-  return String(origin || "")
+  return String(
+    origin || ""
+  )
     .trim()
-    .replace(/\/+$/, "");
+    .replace(
+      /\/+$/,
+      ""
+    );
 }
 
 
@@ -15,12 +20,19 @@ function getAllowedOrigins() {
     process.env.ALLOWED_ORIGINS || ""
   )
     .split(",")
-    .map(normalizeOrigin)
-    .filter(Boolean);
+    .map(
+      normalizeOrigin
+    )
+    .filter(
+      Boolean
+    );
 }
 
 
-function applyCors(req, res) {
+function applyCors(
+  req,
+  res
+) {
 
   const origin =
     normalizeOrigin(
@@ -32,7 +44,9 @@ function applyCors(req, res) {
 
   const originAllowed =
     !origin ||
-    allowedOrigins.includes(origin);
+    allowedOrigins.includes(
+      origin
+    );
 
 
   if (
@@ -113,7 +127,9 @@ export default async function handler(
     req.method === "OPTIONS"
   ) {
 
-    if (!originAllowed) {
+    if (
+      !originAllowed
+    ) {
 
       return res
         .status(403)
@@ -127,7 +143,9 @@ export default async function handler(
   }
 
 
-  if (!originAllowed) {
+  if (
+    !originAllowed
+  ) {
 
     return res
       .status(403)
@@ -155,11 +173,6 @@ export default async function handler(
     !process.env.DATABASE_URL
   ) {
 
-    console.error(
-      "DATABASE_URL is missing."
-    );
-
-
     return res
       .status(500)
       .json({
@@ -175,7 +188,9 @@ export default async function handler(
   try {
 
     body =
-      parseRequestBody(req);
+      parseRequestBody(
+        req
+      );
 
   } catch (error) {
 
@@ -365,8 +380,7 @@ export default async function handler(
 
         total_assistant_turns:
           Number(
-            rows[0]
-              .total_assistant_turns
+            rows[0].total_assistant_turns
           )
 
       });
