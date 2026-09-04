@@ -1,12 +1,6 @@
 import { neon } from "@neondatabase/serverless";
 
 
-/*
- * ============================================================
- * CORS
- * ============================================================
- */
-
 function normalizeOrigin(origin) {
 
   return String(origin || "")
@@ -40,6 +34,7 @@ function applyCors(req, res) {
     !origin ||
     allowedOrigins.includes(origin);
 
+
   if (
     origin &&
     originAllowed
@@ -50,6 +45,7 @@ function applyCors(req, res) {
       req.headers.origin
     );
   }
+
 
   res.setHeader(
     "Vary",
@@ -71,15 +67,10 @@ function applyCors(req, res) {
     "no-store"
   );
 
+
   return originAllowed;
 }
 
-
-/*
- * ============================================================
- * BODY PARSER
- * ============================================================
- */
 
 function parseRequestBody(req) {
 
@@ -91,22 +82,20 @@ function parseRequestBody(req) {
     return req.body;
   }
 
+
   if (
     typeof req.body === "string"
   ) {
 
-    return JSON.parse(req.body);
+    return JSON.parse(
+      req.body
+    );
   }
+
 
   return {};
 }
 
-
-/*
- * ============================================================
- * MAIN HANDLER
- * ============================================================
- */
 
 export default async function handler(
   req,
@@ -130,6 +119,7 @@ export default async function handler(
         .status(403)
         .end();
     }
+
 
     return res
       .status(204)
@@ -169,6 +159,7 @@ export default async function handler(
       "DATABASE_URL is missing."
     );
 
+
     return res
       .status(500)
       .json({
@@ -179,6 +170,7 @@ export default async function handler(
 
 
   let body;
+
 
   try {
 
@@ -201,10 +193,12 @@ export default async function handler(
       body.session_id || ""
     ).trim();
 
+
   const responseId =
     String(
       body.response_id || ""
     ).trim();
+
 
   const assistantDisplayEpoch =
     Number(
@@ -251,8 +245,7 @@ export default async function handler(
   try {
 
     /*
-     * Preserve the FIRST browser display timestamp if an ACK
-     * is accidentally sent more than once.
+     * Preserve the first successful display timestamp.
      */
 
     const rows =
@@ -294,21 +287,27 @@ export default async function handler(
     return res
       .status(200)
       .json({
+
         ok:
           true,
+
         session_id:
           rows[0].session_id,
+
         turn_number:
           Number(
             rows[0].turn_number
           ),
+
         response_id:
           rows[0].response_id,
+
         assistant_display_epoch:
           Number(
             rows[0]
               .assistant_display_epoch
           )
+
       });
 
 
@@ -318,6 +317,7 @@ export default async function handler(
       "Unhandled /api/ack error:",
       error
     );
+
 
     return res
       .status(500)
