@@ -33,16 +33,23 @@ export default async function handler(
         "qualtrics-ai-study",
 
       study_version:
-        "dinner_single_stage_v1",
+        "dinner_category_randomized_v1",
 
       prompt_version:
-        "dinner_refinable_fixed_first_offer_v2",
+        "dinner_offer_categories_v1",
 
       model:
         "gpt-5.6-luna",
 
-      first_turn_optional_offer:
-        "turn this into a shopping and prep checklist",
+      offer_categories: [
+        "reformat",
+        "alternative",
+        "adjust",
+        "elaborate"
+      ],
+
+      offer_category_randomization:
+        "independent_with_replacement_every_turn",
 
       timestamp:
         Date.now()
