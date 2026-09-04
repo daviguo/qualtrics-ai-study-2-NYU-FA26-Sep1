@@ -1,189 +1,329 @@
 import { neon } from "@neondatabase/serverless";
 
 
-function applyCors(req, res) {
+/*
+ * ============================================================
+ * CORS
+ * ============================================================
+ */
 
-    const origin = req.headers.origin;
+function normalizeOrigin(origin) {
 
-    const origins =
-        (process.env.ALLOWED_ORIGINS || "")
-            .split(",")
-            .map(x => x.trim())
-            .filter(Boolean);
-
-
-    if (
-        origin &&
-        origins.includes(origin)
-    ) {
-
-        res.setHeader(
-            "Access-Control-Allow-Origin",
-            origin
-        );
-    }
-
-
-    res.setHeader(
-        "Access-Control-Allow-Methods",
-        "POST, OPTIONS"
-    );
-
-    res.setHeader(
-        "Access-Control-Allow-Headers",
-        "Content-Type"
-    );
-
-    res.setHeader(
-        "Vary",
-        "Origin"
-    );
-
-
-    return (
-        !origin ||
-        origins.includes(origin)
-    );
+  return String(origin || "")
+    .trim()
+    .replace(/\/+$/, "");
 }
 
 
-export default async function handler(req, res) {
+function getAllowedOrigins() {
 
-    const originAllowed =
-        applyCors(req, res);
+  return String(
+    process.env.ALLOWED_ORIGINS || ""
+  )
+    .split(",")
+    .map(normalizeOrigin)
+    .filter(Boolean);
+}
 
 
-    if (req.method === "OPTIONS") {
+function applyCors(req, res) {
 
-        return res.status(204).end();
-    }
+  const origin =
+    normalizeOrigin(
+      req.headers.origin || ""
+    );
 
+  const allowedOrigins =
+    getAllowedOrigins();
+
+  const originAllowed =
+    !origin ||
+    allowedOrigins.includes(origin);
+
+  if (
+    origin &&
+    originAllowed
+  ) {
+
+    res.setHeader(
+      "Access-Control-Allow-Origin",
+      req.headers.origin
+    );
+  }
+
+  res.setHeader(
+    "Vary",
+    "Origin"
+  );
+
+  res.setHeader(
+    "Access-Control-Allow-Methods",
+    "POST, OPTIONS"
+  );
+
+  res.setHeader(
+    "Access-Control-Allow-Headers",
+    "Content-Type"
+  );
+
+  res.setHeader(
+    "Cache-Control",
+    "no-store"
+  );
+
+  return originAllowed;
+}
+
+
+/*
+ * ============================================================
+ * BODY PARSER
+ * ============================================================
+ */
+
+function parseRequestBody(req) {
+
+  if (
+    req.body &&
+    typeof req.body === "object"
+  ) {
+
+    return req.body;
+  }
+
+  if (
+    typeof req.body === "string"
+  ) {
+
+    return JSON.parse(req.body);
+  }
+
+  return {};
+}
+
+
+/*
+ * ============================================================
+ * MAIN HANDLER
+ * ============================================================
+ */
+
+export default async function handler(
+  req,
+  res
+) {
+
+  const originAllowed =
+    applyCors(
+      req,
+      res
+    );
+
+
+  if (
+    req.method === "OPTIONS"
+  ) {
 
     if (!originAllowed) {
 
-        return res.status(403).json({
-            error: "Origin not allowed"
+      return res
+        .status(403)
+        .end();
+    }
+
+    return res
+      .status(204)
+      .end();
+  }
+
+
+  if (!originAllowed) {
+
+    return res
+      .status(403)
+      .json({
+        error:
+          "Origin not allowed"
+      });
+  }
+
+
+  if (
+    req.method !== "POST"
+  ) {
+
+    return res
+      .status(405)
+      .json({
+        error:
+          "Method not allowed"
+      });
+  }
+
+
+  if (
+    !process.env.DATABASE_URL
+  ) {
+
+    console.error(
+      "DATABASE_URL is missing."
+    );
+
+    return res
+      .status(500)
+      .json({
+        error:
+          "Server configuration error"
+      });
+  }
+
+
+  let body;
+
+  try {
+
+    body =
+      parseRequestBody(req);
+
+  } catch (error) {
+
+    return res
+      .status(400)
+      .json({
+        error:
+          "Invalid JSON body"
+      });
+  }
+
+
+  const sessionId =
+    String(
+      body.session_id || ""
+    ).trim();
+
+  const responseId =
+    String(
+      body.response_id || ""
+    ).trim();
+
+  const assistantDisplayEpoch =
+    Number(
+      body.assistant_display_epoch
+    );
+
+
+  if (
+    !sessionId ||
+    !responseId
+  ) {
+
+    return res
+      .status(400)
+      .json({
+        error:
+          "session_id and response_id are required"
+      });
+  }
+
+
+  if (
+    !Number.isFinite(
+      assistantDisplayEpoch
+    ) ||
+    assistantDisplayEpoch <= 0
+  ) {
+
+    return res
+      .status(400)
+      .json({
+        error:
+          "Invalid assistant_display_epoch"
+      });
+  }
+
+
+  const sql =
+    neon(
+      process.env.DATABASE_URL
+    );
+
+
+  try {
+
+    /*
+     * Preserve the FIRST browser display timestamp if an ACK
+     * is accidentally sent more than once.
+     */
+
+    const rows =
+      await sql`
+        UPDATE ai_turns
+        SET
+          assistant_display_epoch =
+            COALESCE(
+              assistant_display_epoch,
+              ${assistantDisplayEpoch}
+            )
+        WHERE
+          session_id =
+            ${sessionId}
+          AND
+          response_id =
+            ${responseId}
+        RETURNING
+          session_id,
+          turn_number,
+          response_id,
+          assistant_display_epoch
+      `;
+
+
+    if (
+      rows.length === 0
+    ) {
+
+      return res
+        .status(404)
+        .json({
+          error:
+            "No matching turn found"
         });
     }
 
 
-    if (req.method !== "POST") {
-
-        return res.status(405).json({
-            error: "Method not allowed"
-        });
-    }
-
-
-    try {
-
-        const body =
-            typeof req.body === "string"
-                ? JSON.parse(req.body)
-                : req.body;
-
-
-        const {
-            session_id,
-            response_id,
-            assistant_display_epoch
-        } = body || {};
+    return res
+      .status(200)
+      .json({
+        ok:
+          true,
+        session_id:
+          rows[0].session_id,
+        turn_number:
+          Number(
+            rows[0].turn_number
+          ),
+        response_id:
+          rows[0].response_id,
+        assistant_display_epoch:
+          Number(
+            rows[0]
+              .assistant_display_epoch
+          )
+      });
 
 
-        console.log("ACK REQUEST", {
-            session_id,
-            response_id,
-            assistant_display_epoch
-        });
+  } catch (error) {
 
+    console.error(
+      "Unhandled /api/ack error:",
+      error
+    );
 
-        if (!session_id) {
-
-            return res.status(400).json({
-                error: "Missing session_id"
-            });
-        }
-
-
-        if (!response_id) {
-
-            return res.status(400).json({
-                error: "Missing response_id"
-            });
-        }
-
-
-        if (
-            assistant_display_epoch === undefined ||
-            assistant_display_epoch === null
-        ) {
-
-            return res.status(400).json({
-                error: "Missing assistant_display_epoch"
-            });
-        }
-
-
-        if (!process.env.DATABASE_URL) {
-
-            return res.status(500).json({
-                error: "DATABASE_URL missing"
-            });
-        }
-
-
-        const sql =
-            neon(process.env.DATABASE_URL);
-
-
-        const updated =
-            await sql`
-                UPDATE ai_turns
-
-                SET assistant_display_epoch =
-                    ${assistant_display_epoch}
-
-                WHERE session_id =
-                    ${session_id}
-
-                AND response_id =
-                    ${response_id}
-
-                RETURNING
-                    session_id,
-                    turn_number,
-                    response_id,
-                    assistant_display_epoch
-            `;
-
-
-        if (updated.length === 0) {
-
-            return res.status(404).json({
-                error: "No matching turn found",
-                session_id: session_id,
-                response_id: response_id
-            });
-        }
-
-
-        return res.status(200).json({
-            ok: true,
-            updated: updated[0]
-        });
-
-
-    } catch (error) {
-
-        console.error(
-            "ACK ERROR:",
-            error
-        );
-
-
-        return res.status(500).json({
-            error: "Internal server error",
-            details: String(error)
-        });
-    }
+    return res
+      .status(500)
+      .json({
+        error:
+          "Server error"
+      });
+  }
 }
