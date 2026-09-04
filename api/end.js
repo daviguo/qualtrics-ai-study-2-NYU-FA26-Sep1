@@ -1,12 +1,6 @@
 import { neon } from "@neondatabase/serverless";
 
 
-/*
- * ============================================================
- * CORS
- * ============================================================
- */
-
 function normalizeOrigin(origin) {
 
   return String(origin || "")
@@ -40,6 +34,7 @@ function applyCors(req, res) {
     !origin ||
     allowedOrigins.includes(origin);
 
+
   if (
     origin &&
     originAllowed
@@ -50,6 +45,7 @@ function applyCors(req, res) {
       req.headers.origin
     );
   }
+
 
   res.setHeader(
     "Vary",
@@ -71,15 +67,10 @@ function applyCors(req, res) {
     "no-store"
   );
 
+
   return originAllowed;
 }
 
-
-/*
- * ============================================================
- * BODY PARSER
- * ============================================================
- */
 
 function parseRequestBody(req) {
 
@@ -91,22 +82,20 @@ function parseRequestBody(req) {
     return req.body;
   }
 
+
   if (
     typeof req.body === "string"
   ) {
 
-    return JSON.parse(req.body);
+    return JSON.parse(
+      req.body
+    );
   }
+
 
   return {};
 }
 
-
-/*
- * ============================================================
- * MAIN HANDLER
- * ============================================================
- */
 
 export default async function handler(
   req,
@@ -130,6 +119,7 @@ export default async function handler(
         .status(403)
         .end();
     }
+
 
     return res
       .status(204)
@@ -169,6 +159,7 @@ export default async function handler(
       "DATABASE_URL is missing."
     );
 
+
     return res
       .status(500)
       .json({
@@ -179,6 +170,7 @@ export default async function handler(
 
 
   let body;
+
 
   try {
 
@@ -201,10 +193,12 @@ export default async function handler(
       body.session_id || ""
     ).trim();
 
+
   const chatEndEpoch =
     Number(
       body.chat_end_epoch
     );
+
 
   const chatEndReason =
     String(
@@ -212,10 +206,12 @@ export default async function handler(
       "participant_chose_end"
     ).trim();
 
+
   const totalUserTurns =
     Number(
       body.total_user_turns
     );
+
 
   const totalAssistantTurns =
     Number(
@@ -223,7 +219,9 @@ export default async function handler(
     );
 
 
-  if (!sessionId) {
+  if (
+    !sessionId
+  ) {
 
     return res
       .status(400)
@@ -283,8 +281,8 @@ export default async function handler(
 
 
   if (
-    chatEndReason.length >
-    100
+    !chatEndReason ||
+    chatEndReason.length > 100
   ) {
 
     return res
@@ -345,25 +343,32 @@ export default async function handler(
     return res
       .status(200)
       .json({
+
         ok:
           true,
+
         session_id:
           rows[0].session_id,
+
         chat_end_epoch:
           Number(
             rows[0].chat_end_epoch
           ),
+
         chat_end_reason:
           rows[0].chat_end_reason,
+
         total_user_turns:
           Number(
             rows[0].total_user_turns
           ),
+
         total_assistant_turns:
           Number(
             rows[0]
               .total_assistant_turns
           )
+
       });
 
 
@@ -373,6 +378,7 @@ export default async function handler(
       "Unhandled /api/end error:",
       error
     );
+
 
     return res
       .status(500)
