@@ -1,1117 +1,1795 @@
 import { neon } from "@neondatabase/serverless";
 
 
-/* =========================================================
-   STUDY CONFIGURATION
-========================================================= */
+/*
+ * ============================================================
+ * STUDY CONFIGURATION
+ * ============================================================
+ */
 
 const MODEL = "gpt-5.6-luna";
 
 const STUDY_VERSION =
-    "city_multiturn_museum_v2";
+  "dinner_single_stage_v1";
 
 const PROMPT_VERSION =
-    "v4_museum_repair";
+  "dinner_refinable_v1";
 
 const TASK_UPDATE_VERSION =
-    "museum_unavailable_v1";
+  "none";
 
 const MAX_TURNS = 12;
 
 const MAX_MESSAGE_LENGTH = 1200;
 
+const MAX_PRIORITIES_LENGTH = 500;
+
+const OPENAI_URL =
+  "https://api.openai.com/v1/responses";
+
 
 /*
-  Only these cities are valid.
+ * ============================================================
+ * CORS
+ * ============================================================
+ */
 
-  The browser is not allowed to create arbitrary destinations.
-*/
+function normalizeOrigin(origin) {
 
-const ALLOWED_CITIES = new Set([
-    "Denver, Colorado",
-    "Austin, Texas",
-    "Seattle, Washington",
-    "Nashville, Tennessee",
-    "Portland, Oregon",
-    "Minneapolis, Minnesota",
-    "Pittsburgh, Pennsylvania",
-    "St. Louis, Missouri"
-]);
+  return String(origin || "")
+    .trim()
+    .replace(/\/+$/, "");
+}
 
-
-/* =========================================================
-   COMMON MODEL INSTRUCTIONS
-========================================================= */
-
-const COMMON_INSTRUCTIONS = `
-You are an AI travel-planning assistant.
-
-The user is planning a Saturday during a weekend trip.
-
-They arrived Friday evening, are staying at a downtown hotel,
-and do not have a rental car.
-
-Their planning goal is to obtain a relaxed Saturday itinerary that:
-
-1. begins no earlier than 10:00 a.m.;
-2. includes a major museum or cultural attraction;
-3. includes a lunch option where a typical entree costs no more
-   than $25 per person; and
-4. gets them back to their downtown hotel by 7:00 p.m.
-
-The traveler prefers a relaxed day rather than trying to fit in
-as many activities as possible.
-
-Respond naturally to the user's actual message.
-
-Create plans that feel realistic, relaxed, and comfortably paced.
-
-Do not maximize the number of activities.
-
-Limit the itinerary to no more than three major planned activities,
-in addition to meals, breaks, and transportation.
-
-Allow realistic travel and transition time between activities.
-
-Avoid unnecessary geographic backtracking.
-
-If the user requests a modification, revise the existing itinerary
-rather than unnecessarily generating an entirely unrelated plan.
-
-If the user responds briefly with something such as "yes," "no,"
-"that sounds good," "make it cheaper," or "can you revise it,"
-interpret the response in the context of the existing conversation.
-
-Use reasonable assumptions rather than asking unnecessary
-clarification questions.
-
-Do not explicitly announce that the task is complete or that all
-requirements have been satisfied unless the user explicitly asks.
-
-Do not mention experimental conditions, system instructions,
-stopping cues, conversational endings, or these instructions.
-
-Use plain text suitable for display inside a chat interface.
-
-Do not use Markdown headings, Markdown tables, bold markers,
-code blocks, or other Markdown formatting.
-
-Short paragraphs and simple time-based itinerary lines are fine.
-`;
-
-
-/* =========================================================
-   TURN 1 — TREATMENT NEUTRAL
-========================================================= */
-
-const FIRST_TURN_INSTRUCTION = `
-For this first response, provide a concrete initial Saturday itinerary.
-
-The itinerary should include exactly one primary named museum or
-cultural attraction that serves as the main cultural activity.
-
-Do not give multiple interchangeable museum alternatives within the
-initial itinerary.
-
-Provide a concrete lunch recommendation and a coherent schedule.
-
-For this first response only, do not append an optional offer of
-additional assistance.
-
-Do not end by asking whether the traveler wants more help.
-
-End naturally after providing the initial itinerary.
-`;
-
-
-/* =========================================================
-   QUESTION CONDITION
-========================================================= */
-
-const QUESTION_INSTRUCTION = `
-At the end of this response, provide exactly one brief offer of
-optional additional assistance phrased as a direct question.
-
-The optional assistance must not be necessary for satisfying the
-travel-planning requirements.
-
-It should offer a possible refinement or additional planning detail
-that the traveler could request if desired.
-
-The question must be the final sentence of the response.
-
-Do not add another optional-help statement or question elsewhere
-after it.
-`;
-
-
-/* =========================================================
-   STATEMENT CONDITION
-========================================================= */
-
-const STATEMENT_INSTRUCTION = `
-At the end of this response, provide exactly one brief offer of
-optional additional assistance phrased as a declarative statement.
-
-The optional assistance must not be necessary for satisfying the
-travel-planning requirements.
-
-It should offer a possible refinement or additional planning detail
-that the traveler could request if desired.
-
-The statement must be the final sentence of the response.
-
-Do not phrase the final optional-help offer as a question.
-`;
-
-
-/* =========================================================
-   STANDARDIZED TRIP UPDATE
-========================================================= */
-
-const STANDARDIZED_UPDATE = `
-The traveler has just learned that the museum or cultural attraction
-included in the current itinerary is unexpectedly unavailable on
-Saturday.
-
-The traveler needs to replace that unavailable attraction with a
-different museum or cultural attraction.
-
-The revised itinerary should continue to satisfy all of the original
-planning requirements and should still feel relaxed and realistic.
-`;
-
-
-/* =========================================================
-   CORS
-========================================================= */
 
 function getAllowedOrigins() {
 
-    return (
-        process.env.ALLOWED_ORIGINS || ""
-    )
-        .split(",")
-        .map(function (x) {
-            return x.trim();
-        })
-        .filter(Boolean);
+  return String(
+    process.env.ALLOWED_ORIGINS || ""
+  )
+    .split(",")
+    .map(normalizeOrigin)
+    .filter(Boolean);
 }
 
 
 function applyCors(req, res) {
 
-    const origin =
-        req.headers.origin;
+  const origin =
+    normalizeOrigin(
+      req.headers.origin || ""
+    );
 
-    const allowedOrigins =
-        getAllowedOrigins();
+  const allowedOrigins =
+    getAllowedOrigins();
 
+  const originAllowed =
+    !origin ||
+    allowedOrigins.includes(origin);
+
+  if (
+    origin &&
+    originAllowed
+  ) {
+
+    res.setHeader(
+      "Access-Control-Allow-Origin",
+      req.headers.origin
+    );
+  }
+
+  res.setHeader(
+    "Vary",
+    "Origin"
+  );
+
+  res.setHeader(
+    "Access-Control-Allow-Methods",
+    "POST, OPTIONS"
+  );
+
+  res.setHeader(
+    "Access-Control-Allow-Headers",
+    "Content-Type"
+  );
+
+  res.setHeader(
+    "Cache-Control",
+    "no-store"
+  );
+
+  return originAllowed;
+}
+
+
+/*
+ * ============================================================
+ * REQUEST HELPERS
+ * ============================================================
+ */
+
+function parseRequestBody(req) {
+
+  if (
+    req.body &&
+    typeof req.body === "object"
+  ) {
+
+    return req.body;
+  }
+
+  if (
+    typeof req.body === "string"
+  ) {
+
+    return JSON.parse(req.body);
+  }
+
+  return {};
+}
+
+
+function isSafeId(value) {
+
+  if (
+    typeof value !== "string" ||
+    !value.trim() ||
+    value.length > 200
+  ) {
+
+    return false;
+  }
+
+  return /^[A-Za-z0-9._:-]+$/.test(
+    value.trim()
+  );
+}
+
+
+function isValidEpoch(value) {
+
+  const number =
+    Number(value);
+
+  return (
+    Number.isFinite(number) &&
+    number > 0
+  );
+}
+
+
+/*
+ * ============================================================
+ * MODEL INSTRUCTIONS
+ * ============================================================
+ */
+
+function buildInstructions(
+  dinnerPriorities,
+  turnNumber
+) {
+
+  const firstTurnSection =
+    turnNumber === 1
+      ? `
+FIRST RESPONSE REQUIREMENTS
+
+This is the first assistant response in the conversation.
+
+Provide one coherent and substantively complete dinner plan.
+
+The participant should have enough information after this response
+to use the plan without needing another message.
+
+The plan should clearly satisfy all four required planning goals.
+
+Provide one recommended plan rather than a long menu of
+interchangeable alternatives.
+
+Aim for approximately 250 to 350 words in response_body.
+
+Do not proactively provide every possible adjacent service.
+For example, unless directly necessary, do not include an exhaustive
+grocery list, multiple backup menus, beverage pairings, decorating
+ideas, extensive substitutions, or numerous alternative meals.
+
+The response should be complete but not exhaustive.
+`
+      : `
+FOLLOW-UP RESPONSE REQUIREMENTS
+
+This is a later conversational turn.
+
+Respond directly to the participant's newest request.
+
+Use the existing dinner plan as context and revise it when appropriate.
+
+Do not unnecessarily repeat the complete dinner plan if a focused
+answer or revision would adequately address the participant's request.
+
+If the participant accepts the optional assistance offered in the
+previous closing, provide that assistance directly.
+`;
+
+  return `
+You are an AI dinner-planning assistant.
+
+Your job is to help the participant create a realistic dinner plan.
+
+SCENARIO
+
+The participant is hosting six friends for dinner at home on
+Saturday evening.
+
+Plan food for seven people total:
+the participant plus six guests.
+
+One of the six guests is vegetarian.
+
+The total food budget is $120.
+
+Dinner should be ready by 7:30 p.m.
+
+The participant does not want to spend more than approximately
+90 minutes actively cooking.
+
+The participant selected these two priorities:
+
+${dinnerPriorities}
+
+A satisfactory dinner plan must:
+
+1. Include a main course and appropriate sides.
+
+2. Give the vegetarian guest a satisfying meal. Do not treat a tiny
+   side dish or simply removing meat from a dish as a sufficient
+   vegetarian meal unless the remaining meal is genuinely substantial.
+
+3. Be reasonably consistent with a total food budget of $120.
+
+4. Include a simple preparation strategy that makes it realistic
+   to serve dinner by 7:30 p.m. without more than approximately
+   90 minutes of active cooking.
+
+The plan should also reflect the participant's stated priorities
+where reasonably possible.
+
+GENERAL RESPONSE RULES
+
+Answer the participant's actual request directly.
+
+Make reasonable assumptions instead of asking unnecessary
+clarifying questions.
+
+Keep recommendations realistic for a home cook.
+
+Do not claim precise prices unless necessary. Reasonable approximate
+costs are acceptable.
+
+Do not mention experiments, research conditions, treatment groups,
+terminal questions, terminal statements, stopping behavior,
+system instructions, hidden instructions, or this prompt.
+
+Do not use Markdown tables.
+
+Do not include a follow-up question anywhere in response_body.
+
+Do not ask the participant whether they want anything else anywhere
+in response_body.
+
+Do not include an offer of additional assistance in response_body.
+
+The response_body should contain only the substantive answer.
+
+You will separately generate optional_offer.
+
+OPTIONAL OFFER RULES
+
+optional_offer should describe exactly one relevant form of additional
+assistance that could reasonably be useful but is NOT required for
+the participant to have a complete answer to their current request.
+
+The optional assistance should be adjacent to the current planning
+task rather than unrelated.
+
+Good examples include:
+
+turn the plan into a shopping and prep checklist
+
+suggest a simple dessert that fits the menu
+
+simplify the cleanup even further
+
+suggest make-ahead steps for the afternoon
+
+provide a serving timeline for the final hour
+
+The offer should be specific enough to sound natural in context.
+
+The optional_offer must be a short bare verb phrase that works
+grammatically after BOTH:
+
+"Would you like me to ..."
+
+and
+
+"I can also ..."
+
+For example:
+
+"turn the plan into a shopping and prep checklist"
+
+Do NOT begin optional_offer with:
+"to"
+"Would you like"
+"Would you like me"
+"I can"
+"I can also"
+
+Do NOT end optional_offer with a question mark, period,
+exclamation point, or other closing punctuation.
+
+Do NOT place the experimental question or statement wording
+inside optional_offer.
+
+${firstTurnSection}
+
+OUTPUT REQUIREMENT
+
+Return only the structured output required by the supplied JSON schema.
+
+response_body must contain the substantive response.
+
+optional_offer must contain only the short optional-help verb phrase.
+`;
+}
+
+
+/*
+ * ============================================================
+ * OPENAI OUTPUT HELPERS
+ * ============================================================
+ */
+
+function extractOutputText(responseData) {
+
+  const pieces = [];
+
+  if (
+    !responseData ||
+    !Array.isArray(responseData.output)
+  ) {
+
+    return "";
+  }
+
+  for (
+    const item of responseData.output
+  ) {
 
     if (
-        origin &&
-        allowedOrigins.includes(origin)
+      !item ||
+      item.type !== "message" ||
+      !Array.isArray(item.content)
     ) {
 
-        res.setHeader(
-            "Access-Control-Allow-Origin",
-            origin
-        );
+      continue;
     }
 
+    for (
+      const content of item.content
+    ) {
 
-    res.setHeader(
-        "Access-Control-Allow-Methods",
-        "POST, OPTIONS"
-    );
+      if (
+        content &&
+        content.type === "output_text" &&
+        typeof content.text === "string"
+      ) {
 
+        pieces.push(
+          content.text
+        );
+      }
+    }
+  }
 
-    res.setHeader(
-        "Access-Control-Allow-Headers",
-        "Content-Type"
-    );
-
-
-    res.setHeader(
-        "Vary",
-        "Origin"
-    );
+  return pieces
+    .join("")
+    .trim();
 }
 
 
-/* =========================================================
-   EXTRACT ASSISTANT TEXT
-========================================================= */
+function cleanOptionalOffer(value) {
 
-function extractAssistantText(data) {
+  let offer =
+    String(value || "")
+      .replace(/\s+/g, " ")
+      .trim();
 
-    const messageItem =
-        data.output?.find(
-            function (item) {
-                return item.type === "message";
-            }
-        );
+  offer =
+    offer.replace(
+      /^would you like me to\s+/i,
+      ""
+    );
 
+  offer =
+    offer.replace(
+      /^would you like me\s+/i,
+      ""
+    );
 
-    const textItem =
-        messageItem?.content?.find(
-            function (item) {
-                return item.type === "output_text";
-            }
-        );
+  offer =
+    offer.replace(
+      /^i can also\s+/i,
+      ""
+    );
 
+  offer =
+    offer.replace(
+      /^i can\s+/i,
+      ""
+    );
 
-    return textItem?.text || "";
+  offer =
+    offer.replace(
+      /^to\s+/i,
+      ""
+    );
+
+  offer =
+    offer.replace(
+      /[?.!]+$/g,
+      ""
+    );
+
+  offer =
+    offer.replace(
+      /\?/g,
+      ""
+    );
+
+  offer =
+    offer.trim();
+
+  if (!offer) {
+
+    offer =
+      "help you refine the dinner plan further";
+  }
+
+  /*
+   * Keep pathological model output from creating an
+   * extremely long terminal sentence.
+   */
+
+  if (
+    offer.length > 180
+  ) {
+
+    offer =
+      offer
+        .slice(0, 180)
+        .trim();
+  }
+
+  return offer;
 }
 
 
-/* =========================================================
-   MAIN API HANDLER
-========================================================= */
+function makeClosing(
+  condition,
+  optionalOffer
+) {
 
-export default async function handler(req, res) {
+  if (
+    condition === "question"
+  ) {
 
-    applyCors(req, res);
+    return (
+      "Would you like me to " +
+      optionalOffer +
+      "?"
+    );
+  }
+
+  return (
+    "I can also " +
+    optionalOffer +
+    " if that would be useful."
+  );
+}
 
 
-    /* -----------------------------------------------------
-       Preflight
-    ----------------------------------------------------- */
+/*
+ * ============================================================
+ * MAIN HANDLER
+ * ============================================================
+ */
 
-    if (req.method === "OPTIONS") {
+export default async function handler(
+  req,
+  res
+) {
+
+  /*
+   * ----------------------------------------------------------
+   * CORS
+   * ----------------------------------------------------------
+   */
+
+  const originAllowed =
+    applyCors(
+      req,
+      res
+    );
+
+  if (
+    req.method === "OPTIONS"
+  ) {
+
+    if (!originAllowed) {
+
+      return res
+        .status(403)
+        .end();
+    }
+
+    return res
+      .status(204)
+      .end();
+  }
+
+  if (!originAllowed) {
+
+    return res
+      .status(403)
+      .json({
+        error:
+          "Origin not allowed"
+      });
+  }
+
+
+  /*
+   * ----------------------------------------------------------
+   * METHOD
+   * ----------------------------------------------------------
+   */
+
+  if (
+    req.method !== "POST"
+  ) {
+
+    return res
+      .status(405)
+      .json({
+        error:
+          "Method not allowed"
+      });
+  }
+
+
+  /*
+   * ----------------------------------------------------------
+   * ENVIRONMENT VARIABLES
+   * ----------------------------------------------------------
+   */
+
+  if (
+    !process.env.OPENAI_API_KEY
+  ) {
+
+    console.error(
+      "OPENAI_API_KEY is missing."
+    );
+
+    return res
+      .status(500)
+      .json({
+        error:
+          "Server configuration error"
+      });
+  }
+
+  if (
+    !process.env.DATABASE_URL
+  ) {
+
+    console.error(
+      "DATABASE_URL is missing."
+    );
+
+    return res
+      .status(500)
+      .json({
+        error:
+          "Server configuration error"
+      });
+  }
+
+  const sql =
+    neon(
+      process.env.DATABASE_URL
+    );
+
+
+  /*
+   * ----------------------------------------------------------
+   * PARSE REQUEST
+   * ----------------------------------------------------------
+   */
+
+  let body;
+
+  try {
+
+    body =
+      parseRequestBody(req);
+
+  } catch (error) {
+
+    return res
+      .status(400)
+      .json({
+        error:
+          "Invalid JSON body"
+      });
+  }
+
+
+  const sessionId =
+    String(
+      body.session_id || ""
+    ).trim();
+
+  const clientMessageId =
+    String(
+      body.client_message_id || ""
+    ).trim();
+
+  const requestedCondition =
+    String(
+      body.condition || ""
+    ).trim();
+
+  const requestedPriorities =
+    String(
+      body.dinner_priorities || ""
+    ).trim();
+
+  const message =
+    String(
+      body.message || ""
+    ).trim();
+
+  const userSubmitEpoch =
+    Number(
+      body.user_submit_epoch
+    );
+
+  const chatStartEpoch =
+    Number(
+      body.chat_start_epoch
+    );
+
+  const serverReceivedEpoch =
+    Date.now();
+
+
+  /*
+   * ----------------------------------------------------------
+   * VALIDATE REQUEST
+   * ----------------------------------------------------------
+   */
+
+  if (
+    !isSafeId(sessionId)
+  ) {
+
+    return res
+      .status(400)
+      .json({
+        error:
+          "Invalid session_id"
+      });
+  }
+
+  if (
+    !isSafeId(clientMessageId)
+  ) {
+
+    return res
+      .status(400)
+      .json({
+        error:
+          "Invalid client_message_id"
+      });
+  }
+
+  if (
+    requestedCondition !== "question" &&
+    requestedCondition !== "statement"
+  ) {
+
+    return res
+      .status(400)
+      .json({
+        error:
+          "Invalid condition"
+      });
+  }
+
+  if (
+    !requestedPriorities ||
+    requestedPriorities.length >
+      MAX_PRIORITIES_LENGTH
+  ) {
+
+    return res
+      .status(400)
+      .json({
+        error:
+          "Invalid dinner_priorities"
+      });
+  }
+
+  if (!message) {
+
+    return res
+      .status(400)
+      .json({
+        error:
+          "Message cannot be empty"
+      });
+  }
+
+  if (
+    message.length >
+    MAX_MESSAGE_LENGTH
+  ) {
+
+    return res
+      .status(400)
+      .json({
+        error:
+          "Message is too long"
+      });
+  }
+
+  if (
+    !isValidEpoch(
+      userSubmitEpoch
+    )
+  ) {
+
+    return res
+      .status(400)
+      .json({
+        error:
+          "Invalid user_submit_epoch"
+      });
+  }
+
+  if (
+    !isValidEpoch(
+      chatStartEpoch
+    )
+  ) {
+
+    return res
+      .status(400)
+      .json({
+        error:
+          "Invalid chat_start_epoch"
+      });
+  }
+
+
+  try {
+
+    /*
+     * --------------------------------------------------------
+     * DUPLICATE CLIENT-MESSAGE PROTECTION
+     *
+     * If the exact same client message has already been stored,
+     * return the stored assistant response rather than calling
+     * OpenAI again.
+     * --------------------------------------------------------
+     */
+
+    const duplicateRows =
+      await sql`
+        SELECT
+          session_id,
+          turn_number,
+          response_id,
+          assistant_text
+        FROM ai_turns
+        WHERE client_message_id =
+          ${clientMessageId}
+        LIMIT 1
+      `;
+
+    if (
+      duplicateRows.length > 0
+    ) {
+
+      const duplicate =
+        duplicateRows[0];
+
+      if (
+        duplicate.session_id !==
+        sessionId
+      ) {
 
         return res
-            .status(204)
-            .end();
-    }
+          .status(409)
+          .json({
+            error:
+              "client_message_id already belongs to another session"
+          });
+      }
 
-
-    /* -----------------------------------------------------
-       POST only
-    ----------------------------------------------------- */
-
-    if (req.method !== "POST") {
-
-        return res.status(405).json({
-            error: "Method not allowed"
+      return res
+        .status(200)
+        .json({
+          ok: true,
+          duplicate: true,
+          session_id:
+            sessionId,
+          turn_number:
+            Number(
+              duplicate.turn_number
+            ),
+          response_id:
+            duplicate.response_id,
+          assistant_text:
+            duplicate.assistant_text
         });
     }
 
 
-    /* -----------------------------------------------------
-       Origin check
-    ----------------------------------------------------- */
+    /*
+     * --------------------------------------------------------
+     * CREATE OR LOAD SESSION
+     * --------------------------------------------------------
+     */
 
-    const origin =
-        req.headers.origin;
-
-    const allowedOrigins =
-        getAllowedOrigins();
+    let sessionRows =
+      await sql`
+        SELECT
+          session_id,
+          condition,
+          dinner_priorities,
+          model_requested,
+          prompt_version,
+          study_version,
+          task_update_version
+        FROM ai_sessions
+        WHERE session_id =
+          ${sessionId}
+        LIMIT 1
+      `;
 
 
     if (
-        origin &&
-        !allowedOrigins.includes(origin)
+      sessionRows.length === 0
     ) {
 
-        return res.status(403).json({
-            error: "Origin not allowed"
+      await sql`
+        INSERT INTO ai_sessions (
+          session_id,
+          condition,
+          model_requested,
+          prompt_version,
+          study_version,
+          task_update_version,
+          dinner_priorities,
+          chat_start_epoch,
+          created_at,
+          updated_at
+        )
+        VALUES (
+          ${sessionId},
+          ${requestedCondition},
+          ${MODEL},
+          ${PROMPT_VERSION},
+          ${STUDY_VERSION},
+          ${TASK_UPDATE_VERSION},
+          ${requestedPriorities},
+          ${chatStartEpoch},
+          NOW(),
+          NOW()
+        )
+        ON CONFLICT (session_id)
+        DO NOTHING
+      `;
+
+
+      sessionRows =
+        await sql`
+          SELECT
+            session_id,
+            condition,
+            dinner_priorities,
+            model_requested,
+            prompt_version,
+            study_version,
+            task_update_version
+          FROM ai_sessions
+          WHERE session_id =
+            ${sessionId}
+          LIMIT 1
+        `;
+    }
+
+
+    if (
+      sessionRows.length === 0
+    ) {
+
+      throw new Error(
+        "Session could not be created."
+      );
+    }
+
+
+    let session =
+      sessionRows[0];
+
+
+    /*
+     * Prevent accidental reuse of a travel-study session ID.
+     */
+
+    if (
+      session.study_version &&
+      session.study_version !==
+        STUDY_VERSION
+    ) {
+
+      return res
+        .status(409)
+        .json({
+          error:
+            "Session ID belongs to a different study version"
         });
     }
+
+
+    /*
+     * If a dinner session was created before priorities were
+     * populated, safely bind them once.
+     */
+
+    if (
+      !session.dinner_priorities
+    ) {
+
+      await sql`
+        UPDATE ai_sessions
+        SET
+          dinner_priorities =
+            ${requestedPriorities},
+          study_version =
+            ${STUDY_VERSION},
+          prompt_version =
+            ${PROMPT_VERSION},
+          task_update_version =
+            ${TASK_UPDATE_VERSION},
+          model_requested =
+            ${MODEL},
+          updated_at =
+            NOW()
+        WHERE session_id =
+          ${sessionId}
+      `;
+
+      session.dinner_priorities =
+        requestedPriorities;
+    }
+
+
+    /*
+     * IMPORTANT:
+     *
+     * From this point onward, condition and priorities come from
+     * Neon, not from the browser request.
+     *
+     * The participant/browser therefore cannot switch condition
+     * during the conversation.
+     */
+
+    const storedCondition =
+      String(
+        session.condition || ""
+      ).trim();
+
+    const storedPriorities =
+      String(
+        session.dinner_priorities ||
+        ""
+      ).trim();
+
+
+    if (
+      storedCondition !==
+        "question" &&
+      storedCondition !==
+        "statement"
+    ) {
+
+      throw new Error(
+        "Stored session condition is invalid."
+      );
+    }
+
+    if (!storedPriorities) {
+
+      throw new Error(
+        "Stored dinner priorities are missing."
+      );
+    }
+
+
+    /*
+     * --------------------------------------------------------
+     * FIND PREVIOUS TURN
+     * --------------------------------------------------------
+     */
+
+    const previousRows =
+      await sql`
+        SELECT
+          turn_number,
+          response_id,
+          closing_text
+        FROM ai_turns
+        WHERE session_id =
+          ${sessionId}
+        ORDER BY turn_number DESC
+        LIMIT 1
+      `;
+
+
+    let turnNumber = 1;
+
+    let previousResponseId =
+      null;
+
+    let previousClosingText =
+      "";
+
+
+    if (
+      previousRows.length > 0
+    ) {
+
+      const previous =
+        previousRows[0];
+
+      turnNumber =
+        Number(
+          previous.turn_number
+        ) + 1;
+
+      previousResponseId =
+        previous.response_id ||
+        null;
+
+      previousClosingText =
+        String(
+          previous.closing_text ||
+          ""
+        ).trim();
+    }
+
+
+    if (
+      turnNumber >
+      MAX_TURNS
+    ) {
+
+      return res
+        .status(409)
+        .json({
+          error:
+            "Maximum conversation length reached"
+        });
+    }
+
+
+    if (
+      turnNumber > 1 &&
+      !previousResponseId
+    ) {
+
+      throw new Error(
+        "Previous response ID is missing."
+      );
+    }
+
+
+    /*
+     * --------------------------------------------------------
+     * BUILD MODEL INPUT
+     * --------------------------------------------------------
+     */
+
+    let modelInput;
+
+
+    if (
+      turnNumber === 1
+    ) {
+
+      modelInput =
+        message;
+
+    } else {
+
+      modelInput = `
+The participant saw the previous assistant response followed by
+this exact final sentence:
+
+"${previousClosingText}"
+
+That final sentence was appended by the application after the
+substantive model response.
+
+Interpret the participant's new message in that conversational context.
+
+For example, if the participant says "yes", "sure", "okay", or another
+short acceptance, treat it as accepting the assistance offered in that
+final sentence.
+
+The participant's new message is:
+
+${message}
+`;
+    }
+
+
+    /*
+     * --------------------------------------------------------
+     * BUILD OPENAI REQUEST
+     *
+     * NOTE:
+     *
+     * condition is deliberately NOT sent to the model.
+     *
+     * The model generates treatment-neutral substantive content
+     * plus a treatment-neutral optional offer.
+     *
+     * Vercel creates the question/statement manipulation later.
+     * --------------------------------------------------------
+     */
+
+    const requestBody = {
+
+      model:
+        MODEL,
+
+      reasoning: {
+        effort:
+          "none"
+      },
+
+      max_output_tokens:
+        700,
+
+      instructions:
+        buildInstructions(
+          storedPriorities,
+          turnNumber
+        ),
+
+      input:
+        modelInput,
+
+      store:
+        true,
+
+      text: {
+
+        format: {
+
+          type:
+            "json_schema",
+
+          name:
+            "dinner_planning_response",
+
+          strict:
+            true,
+
+          schema: {
+
+            type:
+              "object",
+
+            properties: {
+
+              response_body: {
+                type:
+                  "string"
+              },
+
+              optional_offer: {
+                type:
+                  "string"
+              }
+
+            },
+
+            required: [
+              "response_body",
+              "optional_offer"
+            ],
+
+            additionalProperties:
+              false
+
+          }
+
+        }
+
+      },
+
+      metadata: {
+
+        session_id:
+          sessionId,
+
+        study_version:
+          STUDY_VERSION,
+
+        prompt_version:
+          PROMPT_VERSION,
+
+        turn_number:
+          String(
+            turnNumber
+          )
+
+      }
+
+    };
+
+
+    if (
+      previousResponseId
+    ) {
+
+      requestBody.previous_response_id =
+        previousResponseId;
+    }
+
+
+    /*
+     * --------------------------------------------------------
+     * CALL OPENAI
+     * --------------------------------------------------------
+     */
+
+    const controller =
+      new AbortController();
+
+    const timeout =
+      setTimeout(
+        function () {
+
+          controller.abort();
+
+        },
+        60000
+      );
+
+
+    let openAIResponse;
 
 
     try {
 
-        /* =================================================
-           PARSE REQUEST
-        ================================================= */
+      openAIResponse =
+        await fetch(
+          OPENAI_URL,
+          {
 
-        const body =
-            typeof req.body === "string"
-                ? JSON.parse(req.body)
-                : req.body;
+            method:
+              "POST",
 
+            headers: {
 
-        const {
-            session_id,
-            client_message_id,
-            condition,
-            assigned_city,
-            message,
-            user_submit_epoch,
-            chat_start_epoch
-        } = body || {};
+              "Content-Type":
+                "application/json",
 
+              "Authorization":
+                "Bearer " +
+                process.env
+                  .OPENAI_API_KEY
 
-        /* =================================================
-           VALIDATION
-        ================================================= */
-
-        if (
-            !session_id ||
-            typeof session_id !== "string"
-        ) {
-
-            return res.status(400).json({
-                error: "Missing session_id"
-            });
-        }
-
-
-        if (
-            !client_message_id ||
-            typeof client_message_id !== "string"
-        ) {
-
-            return res.status(400).json({
-                error: "Missing client_message_id"
-            });
-        }
-
-
-        if (
-            !["question", "statement"]
-                .includes(condition)
-        ) {
-
-            return res.status(400).json({
-                error: "Invalid condition"
-            });
-        }
-
-
-        if (
-            !assigned_city ||
-            typeof assigned_city !== "string"
-        ) {
-
-            return res.status(400).json({
-                error: "Missing assigned_city"
-            });
-        }
-
-
-        if (
-            !ALLOWED_CITIES.has(
-                assigned_city
-            )
-        ) {
-
-            return res.status(400).json({
-                error: "Invalid assigned_city"
-            });
-        }
-
-
-        if (
-            !message ||
-            typeof message !== "string" ||
-            !message.trim()
-        ) {
-
-            return res.status(400).json({
-                error: "Message cannot be empty"
-            });
-        }
-
-
-        if (
-            message.length >
-            MAX_MESSAGE_LENGTH
-        ) {
-
-            return res.status(400).json({
-                error: "Message too long"
-            });
-        }
-
-
-        if (!process.env.OPENAI_API_KEY) {
-
-            return res.status(500).json({
-                error: "OPENAI_API_KEY missing"
-            });
-        }
-
-
-        if (!process.env.DATABASE_URL) {
-
-            return res.status(500).json({
-                error: "DATABASE_URL missing"
-            });
-        }
-
-
-        /* =================================================
-           CONNECT TO NEON
-        ================================================= */
-
-        const sql =
-            neon(process.env.DATABASE_URL);
-
-
-        /* =================================================
-           DUPLICATE REQUEST PROTECTION
-        ================================================= */
-
-        const duplicate =
-            await sql`
-                SELECT
-                    turn_number,
-                    phase,
-                    response_id,
-                    assistant_text,
-                    model_returned,
-                    api_created_at,
-                    api_completed_at,
-                    input_tokens,
-                    output_tokens,
-                    total_tokens
-
-                FROM ai_turns
-
-                WHERE client_message_id =
-                    ${client_message_id}
-
-                LIMIT 1
-            `;
-
-
-        if (duplicate.length > 0) {
-
-            const d =
-                duplicate[0];
-
-
-            return res.status(200).json({
-
-                turn_number:
-                    d.turn_number,
-
-                phase:
-                    d.phase,
-
-                assistant_text:
-                    d.assistant_text,
-
-                response_id:
-                    d.response_id,
-
-                model:
-                    d.model_returned,
-
-                created_at:
-                    d.api_created_at,
-
-                completed_at:
-                    d.api_completed_at,
-
-                input_tokens:
-                    d.input_tokens,
-
-                output_tokens:
-                    d.output_tokens,
-
-                total_tokens:
-                    d.total_tokens,
-
-                duplicate:
-                    true
-            });
-        }
-
-
-        /* =================================================
-           CREATE / LOAD SESSION
-        ================================================= */
-
-        let sessions =
-            await sql`
-                SELECT
-                    session_id,
-                    condition,
-                    assigned_city,
-                    model_requested,
-                    prompt_version,
-                    study_version,
-                    task_update_version
-
-                FROM ai_sessions
-
-                WHERE session_id =
-                    ${session_id}
-
-                LIMIT 1
-            `;
-
-
-        let storedCondition;
-        let storedCity;
-
-
-        if (sessions.length === 0) {
-
-            /*
-              The first request permanently binds the
-              experimental condition and city to this session.
-            */
-
-            await sql`
-                INSERT INTO ai_sessions (
-
-                    session_id,
-                    condition,
-                    assigned_city,
-
-                    model_requested,
-                    prompt_version,
-                    study_version,
-                    task_update_version,
-
-                    chat_start_epoch
-
-                )
-                VALUES (
-
-                    ${session_id},
-                    ${condition},
-                    ${assigned_city},
-
-                    ${MODEL},
-                    ${PROMPT_VERSION},
-                    ${STUDY_VERSION},
-                    ${TASK_UPDATE_VERSION},
-
-                    ${chat_start_epoch || null}
-                )
-            `;
-
-
-            storedCondition =
-                condition;
-
-            storedCity =
-                assigned_city;
-
-        } else {
-
-            storedCondition =
-                sessions[0].condition;
-
-            storedCity =
-                sessions[0].assigned_city;
-
-
-            /*
-              Backfill only for old pilot rows created
-              before assigned_city existed.
-            */
-
-            if (!storedCity) {
-
-                await sql`
-                    UPDATE ai_sessions
-
-                    SET
-                        assigned_city =
-                            ${assigned_city},
-
-                        study_version =
-                            ${STUDY_VERSION},
-
-                        task_update_version =
-                            ${TASK_UPDATE_VERSION},
-
-                        prompt_version =
-                            ${PROMPT_VERSION},
-
-                        updated_at =
-                            NOW()
-
-                    WHERE session_id =
-                        ${session_id}
-                `;
-
-
-                storedCity =
-                    assigned_city;
-            }
-        }
-
-
-        /* =================================================
-           DETERMINE TURN NUMBER
-        ================================================= */
-
-        const previousTurns =
-            await sql`
-                SELECT
-                    turn_number,
-                    response_id
-
-                FROM ai_turns
-
-                WHERE session_id =
-                    ${session_id}
-
-                ORDER BY turn_number DESC
-
-                LIMIT 1
-            `;
-
-
-        const previousResponseId =
-            previousTurns.length > 0
-                ? previousTurns[0].response_id
-                : null;
-
-
-        const turnNumber =
-            previousTurns.length > 0
-                ? Number(
-                    previousTurns[0].turn_number
-                  ) + 1
-                : 1;
-
-
-        if (
-            turnNumber >
-            MAX_TURNS
-        ) {
-
-            return res.status(429).json({
-                error:
-                    "Maximum conversation length reached"
-            });
-        }
-
-
-        /* =================================================
-           SERVER-CONTROLLED PHASE
-        ================================================= */
-
-        /*
-          Do not rely on the browser to determine phase.
-
-          Turn 1 = initial planning.
-
-          Turn 2 and onward = post-update phase.
-        */
-
-        const phase =
-            turnNumber === 1
-                ? "initial"
-                : "post_update";
-
-
-        /*
-          The standardized update is newly injected
-          only for Turn 2.
-        */
-
-        const taskContextInjected =
-            turnNumber === 2;
-
-
-        /* =================================================
-           CITY-SPECIFIC INSTRUCTIONS
-        ================================================= */
-
-        const cityInstructions = `
-The traveler's assigned destination is ${storedCity}.
-
-Use ${storedCity} as the destination throughout this conversation.
-
-Do not switch to another city and do not ask the traveler to select
-a different destination.
-
-You may recommend real museums, cultural attractions, neighborhoods,
-parks, restaurants, and other places in ${storedCity}.
-
-Prefer well-established places that you are confident actually exist.
-
-If you are uncertain that a named venue exists, use a reasonable
-generic description instead of inventing a place.
-
-Do not claim unsupported precision about current opening hours,
-ticket availability, live public-transit schedules, or exact prices.
-
-For the lunch requirement, choose an option that is reasonably
-consistent with a typical entree price of $25 or less per person.
-
-You may describe prices as approximate or typical rather than
-guaranteed current prices.
-`;
-
-
-        /* =================================================
-           TURN-SPECIFIC INSTRUCTIONS
-        ================================================= */
-
-        let instructions;
-
-
-        if (turnNumber === 1) {
-
-            /*
-              Turn 1 is treatment-neutral because the participant
-              will receive the standardized trip update next.
-            */
-
-            instructions =
-                COMMON_INSTRUCTIONS +
-                "\n\n" +
-                cityInstructions +
-                "\n\n" +
-                FIRST_TURN_INSTRUCTION;
-
-        } else {
-
-            /*
-              Experimental manipulation begins on Turn 2.
-            */
-
-            const closingInstruction =
-                storedCondition === "question"
-                    ? QUESTION_INSTRUCTION
-                    : STATEMENT_INSTRUCTION;
-
-
-            instructions =
-                COMMON_INSTRUCTIONS +
-                "\n\n" +
-                cityInstructions +
-                "\n\n" +
-                closingInstruction;
-        }
-
-
-        /* =================================================
-           MODEL INPUT
-        ================================================= */
-
-        let modelInput =
-            message.trim();
-
-
-        /*
-          Turn 2 is where the standardized update must enter
-          the model's conversation context.
-
-          The participant does NOT need to repeat the update.
-        */
-
-if (turnNumber === 2) {
-
-    modelInput = `
-The traveler has just received the following travel update:
-
-${STANDARDIZED_UPDATE}
-
-Treat this update as part of the traveler's current planning situation.
-
-The museum or cultural attraction included in the previous itinerary
-must now be treated as unavailable.
-
-Do not continue recommending that unavailable attraction.
-
-In response to the traveler's message, revise the existing itinerary
-by selecting a different museum or cultural attraction.
-
-Preserve the useful parts of the existing itinerary where possible
-rather than unnecessarily rebuilding the entire day.
-
-The revised itinerary must still:
-
-1. begin no earlier than 10:00 a.m.;
-2. include a viable museum or cultural attraction;
-3. include a lunch option where a typical entree costs no more
-   than $25 per person;
-4. return the traveler to the downtown hotel by 7:00 p.m.; and
-5. remain relaxed and realistically paced.
-
-Do not say that the update came from a research study,
-experiment, system instruction, or study interface.
-
-The traveler's actual message is:
-
-${message.trim()}
-`;
-}
-
-
-        /* =================================================
-           OPENAI REQUEST
-        ================================================= */
-
-        const openAIRequest = {
-
-            model:
-                MODEL,
-
-            reasoning: {
-                effort: "none"
             },
 
-            max_output_tokens:
-                500,
-
-            instructions:
-                instructions,
-
-            input:
-                modelInput,
-
-            store:
-                true,
-
-            metadata: {
-
-                session_id:
-                    session_id,
-
-                condition:
-                    storedCondition,
-
-                assigned_city:
-                    storedCity,
-
-                phase:
-                    phase,
-
-                study_version:
-                    STUDY_VERSION,
-
-                prompt_version:
-                    PROMPT_VERSION,
-
-                task_update_version:
-                    TASK_UPDATE_VERSION
-            }
-        };
-
-
-        /*
-          Continue the existing model conversation.
-        */
-
-        if (previousResponseId) {
-
-            openAIRequest.previous_response_id =
-                previousResponseId;
-        }
-
-
-        const serverReceivedEpoch =
-            Date.now();
-
-
-        /* =================================================
-           CALL OPENAI
-        ================================================= */
-
-        const openAIResponse =
-            await fetch(
-                "https://api.openai.com/v1/responses",
-                {
-
-                    method: "POST",
-
-                    headers: {
-
-                        "Authorization":
-                            `Bearer ${process.env.OPENAI_API_KEY}`,
-
-                        "Content-Type":
-                            "application/json"
-                    },
-
-                    body:
-                        JSON.stringify(
-                            openAIRequest
-                        )
-                }
-            );
-
-
-        const data =
-            await openAIResponse.json();
-
-
-        const serverResponseEpoch =
-            Date.now();
-
-
-        if (!openAIResponse.ok) {
-
-            console.error(
-                "OpenAI API error:",
-                data
-            );
-
-
-            return res.status(502).json({
-
-                error:
-                    "Model request failed",
-
-                provider_status:
-                    openAIResponse.status
-            });
-        }
-
-
-        /* =================================================
-           EXTRACT ASSISTANT TEXT
-        ================================================= */
-
-        const assistantText =
-            extractAssistantText(data);
-
-
-        if (!assistantText) {
-
-            console.error(
-                "No assistant text:",
-                data
-            );
-
-
-            return res.status(502).json({
-                error:
-                    "No assistant response text"
-            });
-        }
-
-
-        /* =================================================
-           SAVE TURN IN NEON
-        ================================================= */
-
-        await sql`
-            INSERT INTO ai_turns (
-
-                session_id,
-                turn_number,
-                client_message_id,
-
-                condition,
-                phase,
-                task_context_injected,
-
-                user_text,
-                user_submit_epoch,
-
-                server_received_epoch,
-
-                previous_response_id,
-
-                response_id,
-
-                model_requested,
-                model_returned,
-
-                assistant_text,
-
-                api_created_at,
-                api_completed_at,
-
-                server_response_epoch,
-
-                input_tokens,
-                output_tokens,
-                total_tokens
-
-            )
-            VALUES (
-
-                ${session_id},
-                ${turnNumber},
-                ${client_message_id},
-
-                ${storedCondition},
-                ${phase},
-                ${taskContextInjected},
-
-                ${message.trim()},
-                ${user_submit_epoch || null},
-
-                ${serverReceivedEpoch},
-
-                ${previousResponseId},
-
-                ${data.id},
-
-                ${MODEL},
-                ${data.model || null},
-
-                ${assistantText},
-
-                ${data.created_at || null},
-                ${data.completed_at || null},
-
-                ${serverResponseEpoch},
-
-                ${data.usage?.input_tokens ?? null},
-                ${data.usage?.output_tokens ?? null},
-                ${data.usage?.total_tokens ?? null}
-            )
-        `;
-
-
-        /* =================================================
-           RETURN RESPONSE TO QUALTRICS
-        ================================================= */
-
-        return res.status(200).json({
-
-            turn_number:
-                turnNumber,
-
-            phase:
-                phase,
-
-            assistant_text:
-                assistantText,
-
-            response_id:
-                data.id,
-
-            model:
-                data.model,
-
-            created_at:
-                data.created_at,
-
-            completed_at:
-                data.completed_at,
-
-            input_tokens:
-                data.usage?.input_tokens ?? null,
-
-            output_tokens:
-                data.usage?.output_tokens ?? null,
-
-            total_tokens:
-                data.usage?.total_tokens ?? null
-        });
-
+            body:
+              JSON.stringify(
+                requestBody
+              ),
+
+            signal:
+              controller.signal
+
+          }
+        );
 
     } catch (error) {
 
+      if (
+        error &&
+        error.name ===
+          "AbortError"
+      ) {
+
         console.error(
-            "Server error:",
-            error
+          "OpenAI request timed out."
         );
 
-
-        return res.status(500).json({
-
+        return res
+          .status(504)
+          .json({
             error:
-                "Internal server error",
+              "AI request timed out"
+          });
+      }
 
-            details:
-                String(error)
+      throw error;
+
+    } finally {
+
+      clearTimeout(
+        timeout
+      );
+    }
+
+
+    /*
+     * --------------------------------------------------------
+     * PARSE OPENAI RESPONSE
+     * --------------------------------------------------------
+     */
+
+    let openAIData;
+
+    try {
+
+      openAIData =
+        await openAIResponse.json();
+
+    } catch (error) {
+
+      console.error(
+        "OpenAI returned non-JSON response."
+      );
+
+      return res
+        .status(502)
+        .json({
+          error:
+            "Invalid AI response"
         });
     }
+
+
+    if (
+      !openAIResponse.ok
+    ) {
+
+      console.error(
+        "OpenAI API error:",
+        JSON.stringify(
+          openAIData
+        )
+      );
+
+      return res
+        .status(502)
+        .json({
+          error:
+            "AI service error"
+        });
+    }
+
+
+    if (
+      openAIData.status &&
+      openAIData.status !==
+        "completed"
+    ) {
+
+      console.error(
+        "OpenAI response did not complete:",
+        openAIData.status
+      );
+
+      return res
+        .status(502)
+        .json({
+          error:
+            "AI response was incomplete"
+        });
+    }
+
+
+    const rawOutputText =
+      extractOutputText(
+        openAIData
+      );
+
+
+    if (!rawOutputText) {
+
+      console.error(
+        "No output_text found:",
+        JSON.stringify(
+          openAIData
+        )
+      );
+
+      return res
+        .status(502)
+        .json({
+          error:
+            "AI returned no response text"
+        });
+    }
+
+
+    /*
+     * --------------------------------------------------------
+     * PARSE STRUCTURED MODEL OUTPUT
+     * --------------------------------------------------------
+     */
+
+    let parsedOutput;
+
+    try {
+
+      parsedOutput =
+        JSON.parse(
+          rawOutputText
+        );
+
+    } catch (error) {
+
+      console.error(
+        "Structured output JSON parse failed:",
+        rawOutputText
+      );
+
+      return res
+        .status(502)
+        .json({
+          error:
+            "AI returned invalid structured output"
+        });
+    }
+
+
+    const responseBody =
+      String(
+        parsedOutput
+          .response_body ||
+        ""
+      ).trim();
+
+
+    if (!responseBody) {
+
+      return res
+        .status(502)
+        .json({
+          error:
+            "AI returned an empty response"
+        });
+    }
+
+
+    const optionalOffer =
+      cleanOptionalOffer(
+        parsedOutput
+          .optional_offer
+      );
+
+
+    /*
+     * --------------------------------------------------------
+     * CREATE EXPERIMENTAL CLOSING
+     *
+     * This is where treatment occurs.
+     *
+     * The model does NOT know condition.
+     * --------------------------------------------------------
+     */
+
+    const closingText =
+      makeClosing(
+        storedCondition,
+        optionalOffer
+      );
+
+
+    const assistantText =
+      responseBody +
+      "\n\n" +
+      closingText;
+
+
+    const serverResponseEpoch =
+      Date.now();
+
+
+    /*
+     * --------------------------------------------------------
+     * TOKEN USAGE
+     * --------------------------------------------------------
+     */
+
+    const usage =
+      openAIData.usage ||
+      {};
+
+
+    const inputTokens =
+      Number.isFinite(
+        Number(
+          usage.input_tokens
+        )
+      )
+        ? Number(
+            usage.input_tokens
+          )
+        : null;
+
+
+    const outputTokens =
+      Number.isFinite(
+        Number(
+          usage.output_tokens
+        )
+      )
+        ? Number(
+            usage.output_tokens
+          )
+        : null;
+
+
+    const totalTokens =
+      Number.isFinite(
+        Number(
+          usage.total_tokens
+        )
+      )
+        ? Number(
+            usage.total_tokens
+          )
+        : null;
+
+
+    /*
+     * --------------------------------------------------------
+     * TURN METADATA
+     * --------------------------------------------------------
+     */
+
+    const phase =
+      turnNumber === 1
+        ? "initial"
+        : "followup";
+
+
+    const responseId =
+      String(
+        openAIData.id || ""
+      ).trim();
+
+
+    if (!responseId) {
+
+      throw new Error(
+        "OpenAI response ID is missing."
+      );
+    }
+
+
+    const modelReturned =
+      String(
+        openAIData.model ||
+        MODEL
+      );
+
+
+    /*
+     * --------------------------------------------------------
+     * SAVE TURN TO NEON
+     * --------------------------------------------------------
+     */
+
+    try {
+
+      await sql`
+        INSERT INTO ai_turns (
+          session_id,
+          turn_number,
+          client_message_id,
+          condition,
+          user_text,
+          user_submit_epoch,
+          server_received_epoch,
+          previous_response_id,
+          response_id,
+          model_requested,
+          model_returned,
+          assistant_text,
+          server_response_epoch,
+          input_tokens,
+          output_tokens,
+          total_tokens,
+          phase,
+          task_context_injected,
+          optional_offer,
+          closing_text
+        )
+        VALUES (
+          ${sessionId},
+          ${turnNumber},
+          ${clientMessageId},
+          ${storedCondition},
+          ${message},
+          ${userSubmitEpoch},
+          ${serverReceivedEpoch},
+          ${previousResponseId},
+          ${responseId},
+          ${MODEL},
+          ${modelReturned},
+          ${assistantText},
+          ${serverResponseEpoch},
+          ${inputTokens},
+          ${outputTokens},
+          ${totalTokens},
+          ${phase},
+          ${false},
+          ${optionalOffer},
+          ${closingText}
+        )
+      `;
+
+    } catch (insertError) {
+
+      /*
+       * If a duplicate request raced with this request,
+       * return the already-saved response.
+       */
+
+      const raceDuplicateRows =
+        await sql`
+          SELECT
+            session_id,
+            turn_number,
+            response_id,
+            assistant_text
+          FROM ai_turns
+          WHERE client_message_id =
+            ${clientMessageId}
+          LIMIT 1
+        `;
+
+
+      if (
+        raceDuplicateRows.length > 0 &&
+        raceDuplicateRows[0]
+          .session_id ===
+          sessionId
+      ) {
+
+        const existing =
+          raceDuplicateRows[0];
+
+        return res
+          .status(200)
+          .json({
+            ok: true,
+            duplicate: true,
+            session_id:
+              sessionId,
+            turn_number:
+              Number(
+                existing.turn_number
+              ),
+            response_id:
+              existing.response_id,
+            assistant_text:
+              existing.assistant_text
+          });
+      }
+
+      throw insertError;
+    }
+
+
+    /*
+     * Update session timestamp.
+     */
+
+    await sql`
+      UPDATE ai_sessions
+      SET
+        updated_at =
+          NOW()
+      WHERE session_id =
+        ${sessionId}
+    `;
+
+
+    /*
+     * --------------------------------------------------------
+     * RETURN TO QUALTRICS
+     * --------------------------------------------------------
+     */
+
+    return res
+      .status(200)
+      .json({
+
+        ok:
+          true,
+
+        duplicate:
+          false,
+
+        session_id:
+          sessionId,
+
+        turn_number:
+          turnNumber,
+
+        response_id:
+          responseId,
+
+        assistant_text:
+          assistantText,
+
+        model:
+          modelReturned,
+
+        usage: {
+
+          input_tokens:
+            inputTokens,
+
+          output_tokens:
+            outputTokens,
+
+          total_tokens:
+            totalTokens
+
+        }
+
+      });
+
+
+  } catch (error) {
+
+    console.error(
+      "Unhandled /api/chat error:",
+      error
+    );
+
+    return res
+      .status(500)
+      .json({
+        error:
+          "Server error"
+      });
+  }
 }
+
