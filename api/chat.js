@@ -2,13 +2,19 @@ import { neon } from "@neondatabase/serverless";
 import { randomInt } from "node:crypto";
 
 
+/*
+ * ============================================================
+ * STUDY CONFIGURATION
+ * ============================================================
+ */
+
 const MODEL = "gpt-5.6-luna";
 
 const STUDY_VERSION =
   "dinner_2x2_jumbo_pilot_v1";
 
 const PROMPT_VERSION =
-  "dinner_2x2_complete_microoffers_v1";
+  "dinner_2x2_ai_performable_microoffers_v2";
 
 const TASK_UPDATE_VERSION =
   "none";
@@ -22,8 +28,15 @@ const OPENAI_URL =
 
 
 /*
- * Offer category continues to be independently randomized
- * WITH REPLACEMENT on every assistant turn.
+ * ============================================================
+ * OFFER CATEGORY RANDOMIZATION
+ * ============================================================
+ *
+ * Pure randomization with replacement.
+ * Each category has probability .25 on every assistant turn.
+ * Previous category is ignored.
+ * Closing condition is ignored.
+ * ============================================================
  */
 
 const OFFER_CATEGORIES = [
@@ -37,9 +50,7 @@ const OFFER_CATEGORIES = [
 function selectOfferCategory() {
 
   return OFFER_CATEGORIES[
-    randomInt(
-      OFFER_CATEGORIES.length
-    )
+    randomInt(OFFER_CATEGORIES.length)
   ];
 }
 
@@ -54,9 +65,13 @@ function isValidOfferScope(value) {
 
 
 /*
- * ------------------------------------------------------------
- * FALLBACK OFFERS
- * ------------------------------------------------------------
+ * ============================================================
+ * NATURAL AI-PERFORMABLE FALLBACK OFFERS
+ * ============================================================
+ *
+ * Every fallback describes something an AI can actually do
+ * conversationally.
+ * ============================================================
  */
 
 function fallbackOffer(
@@ -68,48 +83,50 @@ function fallbackOffer(
     offerScope === "functional_micro"
   ) {
 
-    const map = {
+    const offers = {
 
       reformat:
         "condense one preparation step into a shorter sequence",
 
       alternative:
-        "suggest one optional substitution for a side dish",
+        "suggest one optional substitute for a side dish",
 
       adjust:
-        "make one preparation step slightly simpler",
+        "suggest one way to simplify a preparation step",
 
       elaborate:
-        "add a little more detail to one preparation step"
+        "add one small serving detail for the main course"
     };
 
-    return map[category];
+
+    return offers[category];
   }
 
 
-  const map = {
+  const offers = {
 
     reformat:
-      "shorten the wording of one preparation step",
+      "condense one already-clear preparation step",
 
     alternative:
       "suggest one optional seasoning substitution",
 
     adjust:
-      "make one serving detail slightly simpler",
+      "suggest one minor serving adjustment",
 
     elaborate:
-      "add one small detail about seasoning a side dish"
+      "add one small seasoning detail for a side dish"
   };
 
-  return map[category];
+
+  return offers[category];
 }
 
 
 /*
- * ------------------------------------------------------------
+ * ============================================================
  * OFFER-SCOPE INSTRUCTIONS
- * ------------------------------------------------------------
+ * ============================================================
  */
 
 function getScopeInstruction(
@@ -123,24 +140,25 @@ function getScopeInstruction(
     return `
 OFFER SCOPE: FUNCTIONAL MICRO-REFINEMENT
 
-The optional offer should be a modest and genuinely useful
-refinement, but it must NOT be needed to complete the dinner task.
+The optional offer should be modest and genuinely useful, but it
+must NOT be necessary for completing the dinner-planning task.
 
-It should affect only ONE limited part of the existing plan.
+It should concern only ONE limited part of the existing plan.
 
 The participant should reasonably think:
 
-"That could be useful, but I do not need it."
+"That could be useful, but I already have what I need."
 
-Examples of the intended level of usefulness:
+Examples of the intended level of assistance:
 
-- simplify one preparation step;
-- reduce cleanup for one component;
-- provide one optional substitution;
-- add a little detail to one existing step;
-- condense one limited part of the preparation plan.
+- suggest one way to simplify a preparation step
+- suggest one optional ingredient substitution
+- add a little detail to one existing preparation step
+- condense one part of the preparation instructions
+- suggest one way to reduce cleanup for one component
 
-Do not offer anything that substantially expands the task.
+Do NOT offer anything that substantially expands the scope of the
+task.
 `;
   }
 
@@ -148,7 +166,7 @@ Do not offer anything that substantially expands the task.
   return `
 OFFER SCOPE: VERY-LOW-NECESSITY MICRO-REFINEMENT
 
-The optional offer should be natural and relevant, but peripheral.
+The optional offer should be natural and relevant but peripheral.
 
 It should have very little instrumental value for completing the
 participant's dinner-planning goal.
@@ -158,25 +176,25 @@ The participant should reasonably think:
 "That is a possible refinement, but the plan is already completely
 usable without it."
 
-Keep the refinement narrowly focused on a minor detail such as:
+Appropriate types of assistance include:
 
-- wording or presentation of one already-clear step;
-- one small seasoning detail;
-- one minor serving detail;
-- one optional seasoning or garnish substitution;
-- one very small clarification of an already-adequate component.
+- condense one already-clear preparation step
+- suggest one optional seasoning substitution
+- add one minor serving detail
+- suggest one optional garnish variation
+- clarify one small detail that is already reasonably understandable
 
-Do not offer to simplify the whole plan, reduce the overall budget,
+Do NOT offer to simplify the entire plan, lower the entire budget,
 create a schedule, provide recipes, create a shopping list, or solve
-any important unresolved issue.
+an important unresolved issue.
 `;
 }
 
 
 /*
- * ------------------------------------------------------------
+ * ============================================================
  * OFFER-CATEGORY INSTRUCTIONS
- * ------------------------------------------------------------
+ * ============================================================
  */
 
 function getCategoryInstruction(
@@ -190,8 +208,16 @@ function getCategoryInstruction(
     return `
 OFFER CATEGORY: REFORMAT
 
-Offer to reorganize, shorten, or re-present ONE limited piece of
-information that has already been supplied.
+Offer to reorganize, shorten, summarize, or re-present ONE limited
+piece of information that has already been supplied.
+
+The action must be something the AI performs through text.
+
+Good examples:
+
+"condense one preparation step into a shorter sequence"
+
+"summarize one part of the serving plan more briefly"
 
 Do not offer to reformat the entire dinner plan.
 `;
@@ -205,8 +231,22 @@ Do not offer to reformat the entire dinner plan.
     return `
 OFFER CATEGORY: ALTERNATIVE
 
-Offer exactly ONE optional substitution or alternative for ONE
-existing component.
+Offer to SUGGEST or RECOMMEND exactly ONE optional substitution or
+alternative for ONE existing component.
+
+The action must be something the AI performs through text.
+
+Good examples:
+
+"suggest one optional substitute for the almonds"
+
+"recommend one alternative seasoning for the vegetables"
+
+Do not generate physical-action wording such as:
+
+"replace the almonds"
+
+"season the vegetables differently"
 
 Do not offer an alternative menu or another complete plan.
 `;
@@ -220,8 +260,25 @@ Do not offer an alternative menu or another complete plan.
     return `
 OFFER CATEGORY: ADJUST
 
-Offer to make ONE small adjustment to ONE limited aspect of the
-existing plan.
+Offer to SUGGEST, RECOMMEND, EXPLAIN, or OUTLINE ONE small adjustment
+to ONE limited aspect of the existing plan.
+
+The AI should offer advice about the adjustment rather than speak as
+though it will physically carry out the adjustment.
+
+Good examples:
+
+"suggest one way to simplify the couscous preparation"
+
+"recommend one way to reduce cleanup for the side dish"
+
+Bad examples:
+
+"simplify the couscous"
+
+"finish the couscous with almonds"
+
+"plate the main course differently"
 
 The adjustment must not be necessary for satisfying the task.
 `;
@@ -235,8 +292,16 @@ The adjustment must not be necessary for satisfying the task.
     return `
 OFFER CATEGORY: ELABORATE
 
-Offer to add a small amount of detail to ONE component that is
-already adequately explained.
+Offer to EXPLAIN, CLARIFY, DESCRIBE, or ADD textual detail about ONE
+component that is already adequately explained.
+
+Good examples:
+
+"add one small serving suggestion for the couscous"
+
+"explain one seasoning option for the vegetables"
+
+"clarify one part of the preparation sequence"
 
 Do not offer extensive instructions or a full recipe.
 `;
@@ -250,9 +315,9 @@ Do not offer extensive instructions or a full recipe.
 
 
 /*
- * ------------------------------------------------------------
+ * ============================================================
  * MODEL INSTRUCTIONS
- * ------------------------------------------------------------
+ * ============================================================
  */
 
 function buildInstructions(
@@ -274,7 +339,7 @@ FIRST RESPONSE REQUIREMENTS
 
 This is the first assistant response.
 
-The participant must receive an OBVIOUSLY COMPLETE,
+The participant must receive an OBVIOUSLY COMPLETE and
 SELF-CONTAINED dinner plan.
 
 A reasonable participant should be able to end the conversation
@@ -284,7 +349,7 @@ The response must include:
 
 1. One clearly recommended dinner plan.
 
-2. A main course.
+2. A clearly identified main course.
 
 3. Appropriate sides.
 
@@ -293,27 +358,29 @@ The response must include:
 5. Approximate cost information showing that the complete meal is
    reasonably consistent with the $120 total food budget.
 
-6. An approximate total cost or cost range.
+6. An approximate overall food cost or cost range.
 
 7. A concrete preparation strategy.
 
-8. Enough timing information to make it clear that dinner can be
-   served by 7:30 p.m.
+8. Enough timing information to make clear that dinner can be served
+   by 7:30 p.m.
 
 9. An explicit indication that active cooking can remain at or below
    approximately 90 minutes.
 
-10. Reasonable attention to both of the participant's selected
-    priorities.
+10. Reasonable attention to both priorities selected by the
+    participant.
 
 Aim for approximately 300 to 420 words.
 
-Do not leave required information for another turn.
+Completeness is more important than brevity.
 
-Do not create a cliffhanger.
+Do NOT leave required information for another turn.
 
-Do not intentionally omit anything in order to make the optional
-offer more attractive.
+Do NOT create a cliffhanger.
+
+Do NOT deliberately omit useful required information in order to make
+the optional offer attractive.
 
 The optional offer must be unnecessary for task completion.
 `;
@@ -325,16 +392,16 @@ FOLLOW-UP RESPONSE REQUIREMENTS
 
 Respond directly to the participant's newest request.
 
-If the participant is accepting the previous closing offer, provide
-that assistance directly.
+If the participant is accepting the assistance offered in the
+previous closing, provide that assistance directly.
 
 Preserve relevant context from the existing dinner plan.
 
-Fully answer the current request before generating the new optional
-offer.
+Fully answer the participant's current request BEFORE generating the
+new optional offer.
 
-Do not intentionally leave something unresolved in order to encourage
-another message.
+Do not intentionally leave an important issue unresolved in order to
+encourage another message.
 `;
   }
 
@@ -344,8 +411,8 @@ You are an AI dinner-planning assistant.
 
 SCENARIO
 
-The participant is hosting six friends for dinner at home on
-Saturday evening.
+The participant is hosting six friends for dinner at home on Saturday
+evening.
 
 Plan food for seven people total:
 the participant plus six guests.
@@ -366,13 +433,13 @@ ${priorities}
 
 CORE TASK REQUIREMENTS
 
-The plan must:
+The dinner plan must:
 
 - include a main course and appropriate sides;
 - provide a satisfying vegetarian meal;
 - be reasonably consistent with the $120 budget;
 - include a realistic preparation strategy;
-- make dinner by 7:30 p.m.;
+- make dinner achievable by 7:30 p.m.;
 - stay within roughly 90 minutes of active cooking;
 - reasonably reflect both selected priorities.
 
@@ -381,12 +448,14 @@ GENERAL RESPONSE RULES
 
 Answer the participant's request directly.
 
-Make reasonable assumptions instead of asking unnecessary
-clarifying questions.
+Make reasonable assumptions instead of asking unnecessary clarifying
+questions.
 
-Keep the plan realistic for an ordinary home cook.
+Keep recommendations realistic for an ordinary home cook.
 
 Use plain text.
+
+Simple numbered or bulleted lines are acceptable.
 
 Do not use Markdown tables.
 
@@ -403,15 +472,16 @@ Do not mention:
 
 - experiments;
 - research;
-- conditions;
+- experimental conditions;
 - question versus statement wording;
 - stopping behavior;
 - offer scope;
 - offer categories;
-- hidden instructions.
+- hidden instructions;
+- system prompts.
 
 
-OPTIONAL OFFER RULES
+OPTIONAL OFFER GENERAL RULES
 
 Generate exactly ONE optional_offer.
 
@@ -419,8 +489,9 @@ The optional_offer must:
 
 - contain one action only;
 - be brief;
-- be specific to the conversation;
+- be specific to the current conversation;
 - be unnecessary for task completion;
+- be a low-necessity refinement;
 - be a bare verb phrase;
 - work naturally after BOTH:
 
@@ -430,17 +501,92 @@ and
 
 "I can also ..."
 
-Do not begin with:
+
+CRITICAL: AI-PERFORMABLE ACTION REQUIREMENT
+
+optional_offer must describe an informational, explanatory,
+recommendation, planning, comparison, summarization, clarification,
+or other TEXT-BASED action that an AI assistant can actually perform.
+
+The AI must NOT speak as though it will physically cook, prepare,
+garnish, season, chop, plate, serve, shop for, or otherwise manipulate
+food or ingredients.
+
+The first verb should normally be a conversational-assistance verb
+such as:
+
+suggest
+recommend
+explain
+clarify
+outline
+summarize
+condense
+compare
+identify
+describe
+add
+give
+provide
+
+
+Examples:
+
+BAD:
+"finish the couscous with toasted almonds"
+
+GOOD:
+"suggest a simple toasted-almond finish for the couscous"
+
+
+BAD:
+"season the vegetables differently"
+
+GOOD:
+"suggest one alternative seasoning for the vegetables"
+
+
+BAD:
+"plate the main course more elegantly"
+
+GOOD:
+"suggest one simple way to plate the main course"
+
+
+BAD:
+"replace the almonds with walnuts"
+
+GOOD:
+"suggest one optional substitute for the almonds"
+
+
+BAD:
+"make the couscous more flavorful"
+
+GOOD:
+"suggest one way to add flavor to the couscous"
+
+
+The optional_offer should generally contain approximately 5 to
+12 words.
+
+Do NOT begin optional_offer with:
 
 "to"
+
 "Would you like"
+
 "Would you like me"
+
 "I can"
+
 "I can also"
 
-Do not end with punctuation.
 
-Do not use a question mark.
+Do NOT end optional_offer with punctuation.
+
+Do NOT include a question mark.
+
 
 Do NOT offer:
 
@@ -473,21 +619,22 @@ ${turnInstructions}
 
 OUTPUT REQUIREMENT
 
-Return only the structured output required by the JSON schema.
+Return only the structured output required by the supplied JSON
+schema.
 
 response_body:
-the substantive answer.
+the complete substantive answer.
 
 optional_offer:
-the short optional-refinement verb phrase only.
+the short AI-performable optional-refinement verb phrase only.
 `;
 }
 
 
 /*
- * ------------------------------------------------------------
+ * ============================================================
  * CORS
- * ------------------------------------------------------------
+ * ============================================================
  */
 
 function normalizeOrigin(origin) {
@@ -519,17 +666,17 @@ function applyCors(
       req.headers.origin || ""
     );
 
-  const allowed =
+  const allowedOrigins =
     getAllowedOrigins();
 
-  const okay =
+  const originAllowed =
     !origin ||
-    allowed.includes(origin);
+    allowedOrigins.includes(origin);
 
 
   if (
     origin &&
-    okay
+    originAllowed
   ) {
 
     res.setHeader(
@@ -560,14 +707,14 @@ function applyCors(
   );
 
 
-  return okay;
+  return originAllowed;
 }
 
 
 /*
- * ------------------------------------------------------------
- * HELPERS
- * ------------------------------------------------------------
+ * ============================================================
+ * REQUEST HELPERS
+ * ============================================================
  */
 
 function parseBody(req) {
@@ -576,14 +723,18 @@ function parseBody(req) {
     req.body &&
     typeof req.body === "object"
   ) {
+
     return req.body;
   }
+
 
   if (
     typeof req.body === "string"
   ) {
+
     return JSON.parse(req.body);
   }
+
 
   return {};
 }
@@ -602,7 +753,8 @@ function isSafeId(value) {
 
 function validEpoch(value) {
 
-  const n = Number(value);
+  const n =
+    Number(value);
 
   return (
     Number.isFinite(n) &&
@@ -611,14 +763,23 @@ function validEpoch(value) {
 }
 
 
+/*
+ * ============================================================
+ * OPENAI OUTPUT EXTRACTION
+ * ============================================================
+ */
+
 function extractOutputText(data) {
 
-  const pieces = [];
+  const pieces =
+    [];
+
 
   if (
     !data ||
     !Array.isArray(data.output)
   ) {
+
     return "";
   }
 
@@ -632,6 +793,7 @@ function extractOutputText(data) {
       item.type !== "message" ||
       !Array.isArray(item.content)
     ) {
+
       continue;
     }
 
@@ -652,7 +814,32 @@ function extractOutputText(data) {
   }
 
 
-  return pieces.join("").trim();
+  return pieces
+    .join("")
+    .trim();
+}
+
+
+/*
+ * ============================================================
+ * SERVER-SIDE OFFER VALIDATION
+ * ============================================================
+ *
+ * This gives us a second layer of protection.
+ *
+ * Even if the model ignores the prompt and outputs something like
+ * "finish the couscous with toasted almonds", that phrase does not
+ * begin with an approved text-based AI action, so Vercel replaces it
+ * with a category/scope-matched fallback.
+ * ============================================================
+ */
+
+function beginsWithAIPerformableVerb(
+  offer
+) {
+
+  return /^(suggest|recommend|explain|clarify|outline|summarize|condense|compare|identify|describe|add|give|provide)\b/i
+    .test(offer);
 }
 
 
@@ -667,6 +854,10 @@ function cleanOffer(
       .replace(/\s+/g, " ")
       .trim();
 
+
+  /*
+   * Remove accidental closing stems.
+   */
 
   offer =
     offer
@@ -701,8 +892,21 @@ function cleanOffer(
       .trim();
 
 
-  const forbidden =
+  /*
+   * These are high-scope offers that should never appear.
+   */
+
+  const forbiddenScopePattern =
     /\b(shopping|grocery|checklist|full recipe|complete recipe|full timeline|complete timeline|full schedule|complete schedule|another menu|complete menu|dessert plan|beverage plan)\b/i;
+
+
+  /*
+   * These are physical-action starts that are especially
+   * inappropriate when preceded by "I can also".
+   */
+
+  const physicalActionStartPattern =
+    /^(finish|cook|prepare|garnish|season|chop|slice|dice|plate|serve|bake|roast|fry|boil|sauté|saute|mix|stir|assemble|shop|buy|toast|grill|replace|swap)\b/i;
 
 
   const wordCount =
@@ -712,12 +916,16 @@ function cleanOffer(
       .length;
 
 
-  if (
+  const invalid =
     !offer ||
     offer.length > 160 ||
     wordCount > 16 ||
-    forbidden.test(offer)
-  ) {
+    forbiddenScopePattern.test(offer) ||
+    physicalActionStartPattern.test(offer) ||
+    !beginsWithAIPerformableVerb(offer);
+
+
+  if (invalid) {
 
     return fallbackOffer(
       offerScope,
@@ -731,13 +939,15 @@ function cleanOffer(
 
 
 /*
- * ------------------------------------------------------------
- * CONDITION MANIPULATION
- * ------------------------------------------------------------
+ * ============================================================
+ * EXPERIMENTAL CLOSING
+ * ============================================================
  *
- * OpenAI NEVER receives condition.
+ * OpenAI NEVER receives question/statement condition.
  *
- * This is the only condition-dependent transformation.
+ * This remains the only condition-dependent participant-facing
+ * transformation.
+ * ============================================================
  */
 
 function makeClosing(
@@ -766,9 +976,9 @@ function makeClosing(
 
 
 /*
- * ------------------------------------------------------------
- * MAIN
- * ------------------------------------------------------------
+ * ============================================================
+ * MAIN HANDLER
+ * ============================================================
  */
 
 export default async function handler(
@@ -795,7 +1005,8 @@ export default async function handler(
     return res
       .status(403)
       .json({
-        error: "Origin not allowed"
+        error:
+          "Origin not allowed"
       });
   }
 
@@ -807,7 +1018,8 @@ export default async function handler(
     return res
       .status(405)
       .json({
-        error: "Method not allowed"
+        error:
+          "Method not allowed"
       });
   }
 
@@ -816,6 +1028,11 @@ export default async function handler(
     !process.env.OPENAI_API_KEY ||
     !process.env.DATABASE_URL
   ) {
+
+    console.error(
+      "Missing required environment variable."
+    );
+
 
     return res
       .status(500)
@@ -832,69 +1049,108 @@ export default async function handler(
     );
 
 
+  /*
+   * ----------------------------------------------------------
+   * Parse request
+   * ----------------------------------------------------------
+   */
+
   let body;
 
 
   try {
 
-    body = parseBody(req);
+    body =
+      parseBody(req);
 
   } catch {
 
     return res
       .status(400)
       .json({
-        error: "Invalid JSON body"
+        error:
+          "Invalid JSON body"
       });
   }
 
 
   const sessionId =
-    String(body.session_id || "")
-      .trim();
+    String(
+      body.session_id || ""
+    ).trim();
+
 
   const clientMessageId =
-    String(body.client_message_id || "")
-      .trim();
+    String(
+      body.client_message_id || ""
+    ).trim();
+
 
   const requestedCondition =
-    String(body.condition || "")
-      .trim();
+    String(
+      body.condition || ""
+    ).trim();
+
 
   const requestedOfferScope =
-    String(body.offer_scope || "")
-      .trim();
+    String(
+      body.offer_scope || ""
+    ).trim();
+
 
   const requestedPriorities =
-    String(body.dinner_priorities || "")
-      .trim();
+    String(
+      body.dinner_priorities || ""
+    ).trim();
+
 
   const message =
-    String(body.message || "")
-      .trim();
+    String(
+      body.message || ""
+    ).trim();
+
 
   const userSubmitEpoch =
-    Number(body.user_submit_epoch);
+    Number(
+      body.user_submit_epoch
+    );
+
 
   const chatStartEpoch =
-    Number(body.chat_start_epoch);
+    Number(
+      body.chat_start_epoch
+    );
+
 
   const serverReceivedEpoch =
     Date.now();
 
 
-  if (!isSafeId(sessionId)) {
+  /*
+   * ----------------------------------------------------------
+   * Validate request
+   * ----------------------------------------------------------
+   */
 
-    return res.status(400)
+  if (
+    !isSafeId(sessionId)
+  ) {
+
+    return res
+      .status(400)
       .json({
-        error: "Invalid session_id"
+        error:
+          "Invalid session_id"
       });
   }
 
 
-  if (!isSafeId(clientMessageId)) {
+  if (
+    !isSafeId(clientMessageId)
+  ) {
 
-    return res.status(400)
+    return res
+      .status(400)
       .json({
         error:
           "Invalid client_message_id"
@@ -907,9 +1163,11 @@ export default async function handler(
     requestedCondition !== "statement"
   ) {
 
-    return res.status(400)
+    return res
+      .status(400)
       .json({
-        error: "Invalid condition"
+        error:
+          "Invalid condition"
       });
   }
 
@@ -920,9 +1178,11 @@ export default async function handler(
     )
   ) {
 
-    return res.status(400)
+    return res
+      .status(400)
       .json({
-        error: "Invalid offer_scope"
+        error:
+          "Invalid offer_scope"
       });
   }
 
@@ -933,7 +1193,8 @@ export default async function handler(
       MAX_PRIORITIES_LENGTH
   ) {
 
-    return res.status(400)
+    return res
+      .status(400)
       .json({
         error:
           "Invalid dinner_priorities"
@@ -947,9 +1208,11 @@ export default async function handler(
       MAX_MESSAGE_LENGTH
   ) {
 
-    return res.status(400)
+    return res
+      .status(400)
       .json({
-        error: "Invalid message"
+        error:
+          "Invalid message"
       });
   }
 
@@ -959,9 +1222,11 @@ export default async function handler(
     !validEpoch(chatStartEpoch)
   ) {
 
-    return res.status(400)
+    return res
+      .status(400)
       .json({
-        error: "Invalid epoch"
+        error:
+          "Invalid epoch"
       });
   }
 
@@ -969,7 +1234,9 @@ export default async function handler(
   try {
 
     /*
-     * Duplicate protection.
+     * --------------------------------------------------------
+     * Duplicate message protection
+     * --------------------------------------------------------
      */
 
     const duplicates =
@@ -991,7 +1258,7 @@ export default async function handler(
 
 
     if (
-      duplicates.length
+      duplicates.length > 0
     ) {
 
       const existing =
@@ -1003,7 +1270,8 @@ export default async function handler(
           sessionId
       ) {
 
-        return res.status(409)
+        return res
+          .status(409)
           .json({
             error:
               "client_message_id belongs to another session"
@@ -1011,23 +1279,39 @@ export default async function handler(
       }
 
 
-      return res.status(200)
+      return res
+        .status(200)
         .json({
-          ok: true,
-          duplicate: true,
-          session_id: sessionId,
+
+          ok:
+            true,
+
+          duplicate:
+            true,
+
+          session_id:
+            sessionId,
+
           turn_number:
-            Number(existing.turn_number),
+            Number(
+              existing.turn_number
+            ),
+
           response_id:
             existing.response_id,
+
           assistant_text:
             existing.assistant_text,
+
           offer_scope:
             existing.offer_scope,
+
           offer_category:
             existing.offer_category,
+
           optional_offer:
             existing.optional_offer,
+
           closing_text:
             existing.closing_text
         });
@@ -1035,7 +1319,9 @@ export default async function handler(
 
 
     /*
-     * Create/load participant session.
+     * --------------------------------------------------------
+     * Create or load session
+     * --------------------------------------------------------
      */
 
     let sessions =
@@ -1084,6 +1370,8 @@ export default async function handler(
           NOW(),
           NOW()
         )
+        ON CONFLICT (session_id)
+        DO NOTHING
       `;
 
 
@@ -1103,6 +1391,16 @@ export default async function handler(
     }
 
 
+    if (
+      sessions.length === 0
+    ) {
+
+      throw new Error(
+        "Session could not be created."
+      );
+    }
+
+
     const session =
       sessions[0];
 
@@ -1112,7 +1410,8 @@ export default async function handler(
         STUDY_VERSION
     ) {
 
-      return res.status(409)
+      return res
+        .status(409)
         .json({
           error:
             "Session belongs to another study version"
@@ -1121,17 +1420,50 @@ export default async function handler(
 
 
     const storedCondition =
-      String(session.condition);
+      String(
+        session.condition || ""
+      ).trim();
+
 
     const storedOfferScope =
-      String(session.offer_scope);
+      String(
+        session.offer_scope || ""
+      ).trim();
+
 
     const storedPriorities =
-      String(session.dinner_priorities);
+      String(
+        session.dinner_priorities || ""
+      ).trim();
+
+
+    if (
+      storedCondition !== "question" &&
+      storedCondition !== "statement"
+    ) {
+
+      throw new Error(
+        "Stored condition is invalid."
+      );
+    }
+
+
+    if (
+      !isValidOfferScope(
+        storedOfferScope
+      )
+    ) {
+
+      throw new Error(
+        "Stored offer scope is invalid."
+      );
+    }
 
 
     /*
-     * Previous assistant turn.
+     * --------------------------------------------------------
+     * Previous turn
+     * --------------------------------------------------------
      */
 
     const previous =
@@ -1154,7 +1486,7 @@ export default async function handler(
 
 
     if (
-      previous.length
+      previous.length > 0
     ) {
 
       turnNumber =
@@ -1162,13 +1494,16 @@ export default async function handler(
           previous[0].turn_number
         ) + 1;
 
+
       previousResponseId =
-        previous[0].response_id;
+        previous[0].response_id ||
+        null;
+
 
       previousClosingText =
         String(
           previous[0].closing_text || ""
-        );
+        ).trim();
     }
 
 
@@ -1176,7 +1511,8 @@ export default async function handler(
       turnNumber > MAX_TURNS
     ) {
 
-      return res.status(409)
+      return res
+        .status(409)
         .json({
           error:
             "Maximum conversation length reached"
@@ -1185,12 +1521,20 @@ export default async function handler(
 
 
     /*
-     * Category remains pure randomization with replacement.
+     * --------------------------------------------------------
+     * Pure category randomization with replacement
+     * --------------------------------------------------------
      */
 
     const offerCategory =
       selectOfferCategory();
 
+
+    /*
+     * --------------------------------------------------------
+     * Model input
+     * --------------------------------------------------------
+     */
 
     let modelInput;
 
@@ -1210,27 +1554,45 @@ exact closing sentence:
 
 "${previousClosingText}"
 
-The application appended that sentence after the assistant response.
+The application appended that sentence after the substantive
+assistant response.
 
-Interpret short responses such as "yes", "sure", "okay", or "please"
-as accepting the assistance offered in that sentence when appropriate.
+Interpret the participant's new message in that conversational
+context.
 
-Participant's new message:
+If the participant gives a short response such as "yes", "sure",
+"okay", "please", or similar acceptance, interpret that response as
+accepting the assistance offered in the exact closing sentence above
+when appropriate.
+
+The participant's new message is:
 
 ${message}
 `;
     }
 
 
+    /*
+     * --------------------------------------------------------
+     * OpenAI request
+     *
+     * IMPORTANT:
+     * condition is NOT included.
+     * --------------------------------------------------------
+     */
+
     const requestBody = {
 
-      model: MODEL,
+      model:
+        MODEL,
 
       reasoning: {
-        effort: "none"
+        effort:
+          "none"
       },
 
-      max_output_tokens: 850,
+      max_output_tokens:
+        850,
 
       instructions:
         buildInstructions(
@@ -1250,25 +1612,30 @@ ${message}
 
         format: {
 
-          type: "json_schema",
+          type:
+            "json_schema",
 
           name:
             "dinner_planning_response",
 
-          strict: true,
+          strict:
+            true,
 
           schema: {
 
-            type: "object",
+            type:
+              "object",
 
             properties: {
 
               response_body: {
-                type: "string"
+                type:
+                  "string"
               },
 
               optional_offer: {
-                type: "string"
+                type:
+                  "string"
               }
             },
 
@@ -1315,6 +1682,12 @@ ${message}
     }
 
 
+    /*
+     * --------------------------------------------------------
+     * Call OpenAI
+     * --------------------------------------------------------
+     */
+
     const controller =
       new AbortController();
 
@@ -1335,9 +1708,12 @@ ${message}
         await fetch(
           OPENAI_URL,
           {
-            method: "POST",
+
+            method:
+              "POST",
 
             headers: {
+
               "Content-Type":
                 "application/json",
 
@@ -1356,14 +1732,47 @@ ${message}
           }
         );
 
+    } catch (error) {
+
+      if (
+        error &&
+        error.name === "AbortError"
+      ) {
+
+        return res
+          .status(504)
+          .json({
+            error:
+              "AI request timed out"
+          });
+      }
+
+
+      throw error;
+
     } finally {
 
       clearTimeout(timeout);
     }
 
 
-    const openAIData =
-      await openAIResponse.json();
+    let openAIData;
+
+
+    try {
+
+      openAIData =
+        await openAIResponse.json();
+
+    } catch {
+
+      return res
+        .status(502)
+        .json({
+          error:
+            "Invalid AI response"
+        });
+    }
 
 
     if (
@@ -1371,16 +1780,30 @@ ${message}
     ) {
 
       console.error(
-        JSON.stringify(
-          openAIData
-        )
+        "OpenAI API error:",
+        JSON.stringify(openAIData)
       );
 
 
-      return res.status(502)
+      return res
+        .status(502)
         .json({
           error:
             "AI service error"
+        });
+    }
+
+
+    if (
+      openAIData.status &&
+      openAIData.status !== "completed"
+    ) {
+
+      return res
+        .status(502)
+        .json({
+          error:
+            "AI response was incomplete"
         });
     }
 
@@ -1390,6 +1813,23 @@ ${message}
         openAIData
       );
 
+
+    if (!rawText) {
+
+      return res
+        .status(502)
+        .json({
+          error:
+            "AI returned no response text"
+        });
+    }
+
+
+    /*
+     * --------------------------------------------------------
+     * Parse structured output
+     * --------------------------------------------------------
+     */
 
     let parsed;
 
@@ -1401,7 +1841,14 @@ ${message}
 
     } catch {
 
-      return res.status(502)
+      console.error(
+        "Invalid structured output:",
+        rawText
+      );
+
+
+      return res
+        .status(502)
         .json({
           error:
             "Invalid structured AI output"
@@ -1417,13 +1864,20 @@ ${message}
 
     if (!responseBody) {
 
-      return res.status(502)
+      return res
+        .status(502)
         .json({
           error:
             "Empty AI response"
         });
     }
 
+
+    /*
+     * --------------------------------------------------------
+     * Validate optional offer
+     * --------------------------------------------------------
+     */
 
     const optionalOffer =
       cleanOffer(
@@ -1434,9 +1888,9 @@ ${message}
 
 
     /*
-     * CONDITION DOES NOT GO TO OPENAI.
-     *
-     * It is applied here only after the neutral offer exists.
+     * --------------------------------------------------------
+     * Apply condition AFTER neutral offer exists
+     * --------------------------------------------------------
      */
 
     const closingText =
@@ -1452,31 +1906,59 @@ ${message}
       closingText;
 
 
-    const responseId =
-      String(
-        openAIData.id || ""
-      );
-
+    /*
+     * --------------------------------------------------------
+     * Usage
+     * --------------------------------------------------------
+     */
 
     const usage =
       openAIData.usage || {};
 
 
     const inputTokens =
-      Number(
-        usage.input_tokens
-      ) || null;
+      Number.isFinite(
+        Number(usage.input_tokens)
+      )
+        ? Number(usage.input_tokens)
+        : null;
+
 
     const outputTokens =
-      Number(
-        usage.output_tokens
-      ) || null;
+      Number.isFinite(
+        Number(usage.output_tokens)
+      )
+        ? Number(usage.output_tokens)
+        : null;
+
 
     const totalTokens =
-      Number(
-        usage.total_tokens
-      ) || null;
+      Number.isFinite(
+        Number(usage.total_tokens)
+      )
+        ? Number(usage.total_tokens)
+        : null;
 
+
+    const responseId =
+      String(
+        openAIData.id || ""
+      ).trim();
+
+
+    if (!responseId) {
+
+      throw new Error(
+        "OpenAI response ID missing."
+      );
+    }
+
+
+    /*
+     * --------------------------------------------------------
+     * Save turn
+     * --------------------------------------------------------
+     */
 
     await sql`
       INSERT INTO ai_turns (
@@ -1542,10 +2024,18 @@ ${message}
     `;
 
 
-    return res.status(200)
+    /*
+     * --------------------------------------------------------
+     * Return to Qualtrics
+     * --------------------------------------------------------
+     */
+
+    return res
+      .status(200)
       .json({
 
-        ok: true,
+        ok:
+          true,
 
         session_id:
           sessionId,
@@ -1572,6 +2062,7 @@ ${message}
           closingText,
 
         usage: {
+
           input_tokens:
             inputTokens,
 
@@ -1592,9 +2083,11 @@ ${message}
     );
 
 
-    return res.status(500)
+    return res
+      .status(500)
       .json({
-        error: "Server error"
+        error:
+          "Server error"
       });
   }
 }
