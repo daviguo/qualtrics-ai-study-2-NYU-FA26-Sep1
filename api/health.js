@@ -13,7 +13,8 @@ export default async function handler(
     req.method !== "GET"
   ) {
 
-    return res.status(405)
+    return res
+      .status(405)
       .json({
         error:
           "Method not allowed"
@@ -21,10 +22,12 @@ export default async function handler(
   }
 
 
-  return res.status(200)
+  return res
+    .status(200)
     .json({
 
-      ok: true,
+      ok:
+        true,
 
       service:
         "qualtrics-ai-study",
@@ -33,7 +36,7 @@ export default async function handler(
         "dinner_2x2_jumbo_pilot_v1",
 
       prompt_version:
-        "dinner_2x2_complete_microoffers_v1",
+        "dinner_2x2_ai_performable_microoffers_v2",
 
       model:
         "gpt-5.6-luna",
@@ -63,6 +66,9 @@ export default async function handler(
         "adjust",
         "elaborate"
       ],
+
+      offer_action_requirement:
+        "text_based_ai_performable_action",
 
       offer_category_randomization:
         "independent_with_replacement_every_turn",
