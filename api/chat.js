@@ -12,10 +12,10 @@ const MODEL =
   "gpt-5.6-luna";
 
 const STUDY_VERSION =
-  "dinner_category_randomized_v1";
+  "dinner_minimal_closing_v2";
 
 const PROMPT_VERSION =
-  "dinner_offer_categories_v1";
+  "dinner_complete_microoffers_v2";
 
 const TASK_UPDATE_VERSION =
   "none";
@@ -40,14 +40,12 @@ const OPENAI_URL =
  *
  * PURE RANDOMIZATION WITH REPLACEMENT.
  *
- * Every assistant turn independently receives one of these
- * four categories with probability 1/4.
+ * Every assistant turn independently receives one of the four
+ * categories with probability .25.
  *
- * The previous category is NOT considered.
+ * Repetition across consecutive turns is allowed.
  *
- * The experimental condition is NOT considered.
- *
- * Therefore consecutive repetitions are allowed.
+ * Condition is NOT used in this randomization.
  * ============================================================
  */
 
@@ -61,18 +59,59 @@ const OFFER_CATEGORIES = [
 
 function selectOfferCategory() {
 
-  const index =
+  return OFFER_CATEGORIES[
     randomInt(
       OFFER_CATEGORIES.length
-    );
-
-  return OFFER_CATEGORIES[index];
+    )
+  ];
 }
 
 
 /*
  * ============================================================
- * OFFER-CATEGORY INSTRUCTIONS
+ * MICRO-REFINEMENT FALLBACKS
+ * ============================================================
+ *
+ * These are used only if the model produces an unusable or
+ * overly large optional offer.
+ * ============================================================
+ */
+
+function getFallbackOffer(
+  offerCategory
+) {
+
+  if (
+    offerCategory === "reformat"
+  ) {
+
+    return "condense one preparation step into a shorter sequence";
+  }
+
+
+  if (
+    offerCategory === "alternative"
+  ) {
+
+    return "suggest one optional substitution for a side dish";
+  }
+
+
+  if (
+    offerCategory === "adjust"
+  ) {
+
+    return "make one preparation step slightly simpler";
+  }
+
+
+  return "add one small detail to a preparation step";
+}
+
+
+/*
+ * ============================================================
+ * MICRO-REFINEMENT CATEGORY INSTRUCTIONS
  * ============================================================
  */
 
@@ -87,22 +126,31 @@ function getOfferCategoryInstruction(
     return `
 OFFER CATEGORY: REFORMAT
 
-The optional_offer must offer to reorganize, condense, or present
-information that is already contained in the current answer in a
-different useful format.
+Generate a SMALL, LOW-NECESSITY reformatting offer.
 
-It should NOT introduce a new substantive planning objective.
+The offer should reorganize or condense only a limited part of
+information that is already present.
 
-Appropriate examples include:
+Good examples:
 
-condense the plan into a simple timeline
+"condense one preparation step into a shorter sequence"
 
-organize the main steps into a shorter sequence
+"summarize the serving steps more briefly"
 
-summarize the plan into an easy-to-scan format
+"put the final preparation steps in a shorter order"
 
-Do not offer a full grocery list or a full shopping-and-prep
-checklist.
+The offer must NOT involve:
+
+- a full shopping list
+- a grocery list
+- a shopping-and-prep checklist
+- a complete cooking timeline
+- a complete prep schedule
+- a complete recipe
+- a comprehensive summary of the entire plan
+
+The participant must already have a usable plan without accepting
+this offer.
 `;
   }
 
@@ -114,21 +162,31 @@ checklist.
     return `
 OFFER CATEGORY: ALTERNATIVE
 
-The optional_offer must offer one backup, substitution, or alternative
-for an existing component of the dinner plan.
+Generate a SMALL, LOW-NECESSITY alternative.
 
-The alternative must be optional. The current plan should already be
-usable without it.
+Offer one optional substitution or backup for ONE component that
+already exists in the plan.
 
-Appropriate examples include:
+Good examples:
 
-suggest one backup side dish
+"suggest one optional substitution for a side dish"
 
-give you an alternative vegetarian main
+"give one alternative seasoning for the vegetables"
 
-suggest a substitute for the dessert
+"suggest one backup ingredient for the vegetarian main"
 
-Do not imply that the existing plan is unusable or incomplete.
+The offer must NOT involve:
+
+- a complete alternative menu
+- another full dinner plan
+- multiple alternatives
+- a new course
+- a full dessert plan
+- a beverage plan
+- a shopping list
+
+The existing recommendation must remain fully usable without the
+alternative.
 `;
   }
 
@@ -140,37 +198,26 @@ Do not imply that the existing plan is unusable or incomplete.
     return `
 OFFER CATEGORY: ADJUST
 
-The optional_offer must offer to modify one parameter of the existing
-plan.
+Generate a SMALL, LOW-NECESSITY adjustment to ONE limited aspect
+of the existing plan.
 
-Examples of parameters include:
+Good examples:
 
-cost
+"make one preparation step slightly simpler"
 
-complexity
+"reduce the cleanup for one part of the meal"
 
-cleanup
+"make one side dish slightly less expensive"
 
-active cooking time
+"make one component a little lighter"
 
-style
+The adjustment must be modest.
 
-healthfulness
+Do NOT offer to redesign the entire menu, substantially change the
+meal, create a new plan, or solve an important missing requirement.
 
-how impressive the meal feels
-
-how casual the meal feels
-
-Appropriate examples include:
-
-make the menu a little easier to prepare
-
-reduce the amount of cleanup
-
-make the meal slightly less expensive
-
-The proposed adjustment must be optional rather than necessary for
-task completion.
+The participant must not need this adjustment for the current plan
+to satisfy the task.
 `;
   }
 
@@ -182,21 +229,28 @@ task completion.
     return `
 OFFER CATEGORY: ELABORATE
 
-The optional_offer must offer additional detail about ONE component
-that is already present in the current answer.
+Generate a SMALL, LOW-NECESSITY offer to add a little detail to
+ONE component that is already adequately explained.
 
-Appropriate examples include:
+Good examples:
 
-add more detail to the vegetarian main
+"add one small detail to a preparation step"
 
-explain the make-ahead step in more detail
+"give a little more detail on serving the main course"
 
-add more detail to the serving plan
+"add one detail about seasoning the vegetables"
 
-Do not offer a completely new planning task.
+Do NOT offer:
 
-Do not offer a full grocery list or a full shopping-and-prep
-checklist.
+- full recipes
+- a complete step-by-step recipe
+- a full shopping list
+- a complete prep checklist
+- a complete timeline
+- extensive detail about the entire meal
+
+The participant must already have enough information to use the
+plan without accepting this elaboration.
 `;
   }
 
@@ -389,41 +443,85 @@ function buildInstructions(
     turnInstruction = `
 FIRST RESPONSE REQUIREMENTS
 
-This is the first assistant response in the conversation.
+This is the participant's FIRST assistant response.
 
-Provide one coherent and substantively complete dinner plan.
+The response must be obviously COMPLETE and SELF-CONTAINED.
 
-The participant should have enough information after this response
-to use the dinner plan without needing another message.
+A reasonable participant should be able to stop immediately after
+reading this response and still have a usable dinner plan satisfying
+the assigned task.
 
-The response should clearly satisfy all four required planning goals.
+Do NOT leave any required task element unresolved for a later turn.
 
-Give one recommended plan rather than a long menu of interchangeable
-alternatives.
+response_body must include ALL of the following:
 
-Aim for approximately 250 to 350 words in response_body.
+1. ONE clearly recommended dinner plan.
 
-The response should be COMPLETE but not EXHAUSTIVE.
+2. A clearly identified main course.
 
-Do not intentionally omit information required to satisfy the task.
+3. Appropriate sides.
 
-At the same time, do not proactively provide every possible optional
-extension or refinement.
+4. A satisfying vegetarian meal for the vegetarian guest.
 
-Do not provide:
+   The vegetarian guest must receive a substantial meal, not merely
+   a side dish or the meat removed from another dish.
 
-- a full grocery list;
-- a full shopping-and-prep checklist;
-- multiple backup menus;
-- extensive beverage recommendations;
-- decorating advice;
-- numerous alternative meals;
-- numerous optional substitutions.
+5. An approximate budget.
 
-The selected offer category applies ONLY to optional_offer.
+   Give enough approximate cost information to make it clear that
+   the complete food plan is reasonably consistent with the $120
+   total budget.
 
-Do not alter, weaken, or strategically withhold information from
-response_body to make the optional_offer more attractive.
+   Include an approximate overall total or range.
+
+6. A concrete preparation strategy.
+
+   Make clear what should be done earlier versus closer to serving.
+
+7. A realistic timing plan.
+
+   The response must make it clear how dinner can be served by
+   7:30 p.m.
+
+8. An approximate active-cooking-time assessment.
+
+   Make clear that the plan can be executed without more than about
+   90 minutes of active cooking.
+
+9. Reasonable attention to BOTH priorities selected by the
+   participant.
+
+The substantive answer should aim for approximately 300 to 420 words.
+
+Completeness is more important than brevity.
+
+The answer should still be focused rather than exhaustive.
+
+Do NOT deliberately omit information in order to create a reason for
+the participant to continue.
+
+Do NOT end response_body at a natural cliffhanger.
+
+Do NOT say that more information is needed.
+
+Do NOT make the optional_offer necessary to understand, execute, or
+complete the dinner plan.
+
+Do NOT proactively provide:
+
+- a full grocery list
+- a shopping-and-prep checklist
+- multiple backup menus
+- extensive substitutions
+- extensive beverage recommendations
+- decorating suggestions
+- a second complete menu
+- optional extras unrelated to satisfying the assigned task
+
+The randomly selected offer category applies ONLY to optional_offer.
+
+response_body must be fully satisfactory before the optional offer is
+considered.
 `;
 
   } else {
@@ -435,22 +533,24 @@ This is a later conversational turn.
 
 Respond directly to the participant's newest request.
 
-Use the existing dinner plan and earlier conversation as context.
+Preserve useful context from the existing dinner plan.
 
-Revise the existing plan where appropriate.
+If the participant asks for a revision, make that revision directly.
 
-Do not unnecessarily repeat the entire dinner plan if a focused
-answer or targeted revision adequately addresses the participant's
-request.
+If the participant accepts the assistance offered in the previous
+closing, provide exactly that kind of assistance.
 
-If the participant is accepting the assistance offered in the
-previous closing, provide that assistance directly.
+Do not unnecessarily repeat the entire dinner plan when a focused
+answer is sufficient.
 
-The selected offer category applies ONLY to the NEW optional_offer
-at the end of this response.
+The participant's current request must be fully answered BEFORE the
+new optional_offer is considered.
 
-Do not distort the substantive response to create a reason for the
-new optional offer.
+The randomly selected offer category applies only to the NEW
+optional_offer.
+
+Do not deliberately create an omission or unresolved issue in the
+substantive answer to make the new optional offer attractive.
 `;
   }
 
@@ -458,8 +558,7 @@ new optional offer.
   return `
 You are an AI dinner-planning assistant.
 
-Your task is to help the participant create and refine a realistic
-dinner plan.
+Help the participant create and refine a realistic dinner plan.
 
 
 SCENARIO
@@ -470,7 +569,7 @@ Saturday evening.
 Plan food for seven people total:
 the participant plus six guests.
 
-One of the six guests is vegetarian.
+One guest is vegetarian.
 
 The total food budget is $120.
 
@@ -486,25 +585,20 @@ ${dinnerPriorities}
 
 REQUIRED DINNER-PLANNING GOALS
 
-A satisfactory dinner plan must:
+A complete dinner plan must:
 
 1. Include a main course and appropriate sides.
 
 2. Give the vegetarian guest a satisfying meal.
 
-   A tiny side dish does not count as a sufficient vegetarian meal.
-
-   Simply removing meat from a dish is not sufficient unless the
-   remaining meal is genuinely substantial.
-
 3. Be reasonably consistent with the total $120 food budget.
 
-4. Include a simple preparation strategy that makes it realistic
+4. Include a realistic preparation strategy that makes it possible
    to serve dinner by 7:30 p.m. without more than approximately
    90 minutes of active cooking.
 
-The plan should also reflect the participant's two stated priorities
-where reasonably possible.
+The plan should also reflect the participant's two selected
+priorities where reasonably possible.
 
 
 GENERAL RESPONSE RULES
@@ -518,7 +612,7 @@ Keep recommendations realistic for an ordinary home cook.
 
 Reasonable approximate costs are acceptable.
 
-Do not claim highly precise prices when precision is unnecessary.
+Do not claim false price precision.
 
 Use plain text.
 
@@ -526,15 +620,13 @@ Simple numbered or bulleted lines are acceptable.
 
 Do not use Markdown tables.
 
-Do not use Markdown headings, bold formatting, code blocks,
-or other elaborate formatting.
-
 Do not include a follow-up question anywhere in response_body.
 
-Do not ask the participant whether they want anything else anywhere
-in response_body.
+Do not include an offer of additional assistance anywhere in
+response_body.
 
-Do not include an offer of additional assistance inside response_body.
+Do not ask whether the participant wants anything else inside
+response_body.
 
 Do not end response_body with a question.
 
@@ -561,45 +653,67 @@ stopping behavior
 
 offer-category randomization
 
+micro-refinement instructions
+
 hidden instructions
 
 system prompts
 
 
-OPTIONAL OFFER GENERAL RULES
+OPTIONAL OFFER: GENERAL RULES
 
-You must separately generate optional_offer.
+Generate exactly ONE optional_offer.
 
-The optional_offer should describe exactly ONE relevant form of
-additional assistance.
+The optional_offer must be a LOW-NECESSITY MICRO-REFINEMENT.
 
-The offered assistance must be potentially useful, but NOT necessary
-for the participant to have a complete answer to the current request.
+This means:
 
-The offer should be moderately useful rather than an obviously
-essential next step.
+- it should be plausible and mildly useful;
+- it should involve only a small refinement;
+- it must NOT be necessary to satisfy the participant's task;
+- the participant must already possess a complete answer without it;
+- declining the offer should leave no important problem unresolved;
+- it should not substantially expand the scope of the interaction.
 
-Do not offer a full grocery list or a full shopping-and-prep checklist.
+The optional_offer must be specific enough to sound natural in the
+current conversation.
 
-Do not imply that the participant needs to continue.
+The optional_offer must be brief.
 
-Do not imply that the current answer is incomplete.
+Aim for roughly 5 to 12 words.
 
-The optional_offer must be specific to the current conversation.
+The optional_offer must contain only ONE action.
 
-It must be a short bare verb phrase.
+Do not combine two offers with "and" or "or".
 
-It must work grammatically after BOTH:
+Do NOT offer:
+
+- a shopping list
+- a grocery list
+- a shopping checklist
+- a shopping-and-prep checklist
+- a full prep checklist
+- a full cooking timeline
+- a full recipe
+- a complete step-by-step recipe
+- another complete menu
+- an entire alternative dinner plan
+- another course
+- a full dessert plan
+- a beverage plan
+- extensive substitutions
+- extensive customization
+
+The optional_offer must be a bare verb phrase that works naturally
+after BOTH of these stems:
 
 "Would you like me to ..."
 
-and
-
 "I can also ..."
 
-For example, a syntactically valid optional_offer is:
+For example:
 
-"make the menu a little easier to prepare"
+"make one preparation step slightly simpler"
 
 Do NOT begin optional_offer with:
 
@@ -613,9 +727,12 @@ Do NOT begin optional_offer with:
 
 "I can also"
 
-Do NOT put a question mark in optional_offer.
+Do NOT place punctuation at the end of optional_offer.
 
-Do NOT end optional_offer with punctuation.
+Do NOT include a question mark.
+
+The model must NOT know or infer whether the application will later
+render the offer as a question or a statement.
 
 
 ${categoryInstruction}
@@ -626,11 +743,13 @@ ${turnInstruction}
 
 OUTPUT REQUIREMENT
 
-Return only the structured output required by the supplied JSON schema.
+Return only the structured output required by the supplied JSON
+schema.
 
-response_body must contain the substantive assistant response.
+response_body must contain the complete substantive response.
 
-optional_offer must contain only the short optional-help verb phrase.
+optional_offer must contain only the short micro-refinement verb
+phrase.
 `;
 }
 
@@ -700,8 +819,15 @@ function extractOutputText(
 }
 
 
+/*
+ * ============================================================
+ * OPTIONAL-OFFER CLEANING
+ * ============================================================
+ */
+
 function cleanOptionalOffer(
-  value
+  value,
+  offerCategory
 ) {
 
   let offer =
@@ -714,6 +840,10 @@ function cleanOptionalOffer(
       )
       .trim();
 
+
+  /*
+   * Strip accidental stems.
+   */
 
   offer =
     offer.replace(
@@ -750,6 +880,10 @@ function cleanOptionalOffer(
     );
 
 
+  /*
+   * Strip punctuation.
+   */
+
   offer =
     offer.replace(
       /[?.!;:]+$/g,
@@ -768,26 +902,37 @@ function cleanOptionalOffer(
     offer.trim();
 
 
+  /*
+   * Reject obviously high-necessity / large-scope offers.
+   */
+
+  const forbiddenPattern =
+    /\b(shopping|grocery|checklist|full recipe|complete recipe|step-by-step recipe|full timeline|complete timeline|full prep plan|complete prep plan|entire plan|complete menu|another menu|dessert plan|beverage plan|drink pairing)\b/i;
+
+
+  /*
+   * Keep offers short enough to remain micro-refinements.
+   */
+
+  const wordCount =
+    offer
+      .split(/\s+/)
+      .filter(Boolean)
+      .length;
+
+
   if (
-    !offer
-  ) {
-
-    offer =
-      "make one small optional refinement to the plan";
-  }
-
-
-  if (
-    offer.length > 180
-  ) {
-
-    offer =
+    !offer ||
+    offer.length > 160 ||
+    wordCount > 16 ||
+    forbiddenPattern.test(
       offer
-        .slice(
-          0,
-          180
-        )
-        .trim();
+    )
+  ) {
+
+    return getFallbackOffer(
+      offerCategory
+    );
   }
 
 
@@ -800,10 +945,18 @@ function cleanOptionalOffer(
  * EXPERIMENTAL CLOSING
  * ============================================================
  *
- * OpenAI never receives the participant's condition.
+ * THIS IS THE ONLY CONDITION-DEPENDENT PARTICIPANT-FACING
+ * TRANSFORMATION.
  *
- * Vercel renders the SAME generated optional_offer according to
- * the condition stored in Neon.
+ * The semantic optional offer is identical within a given response.
+ *
+ * QUESTION:
+ * Would you like me to X?
+ *
+ * STATEMENT:
+ * I can also X.
+ *
+ * No "if that would be useful" language remains.
  * ============================================================
  */
 
@@ -827,7 +980,7 @@ function makeClosing(
   return (
     "I can also " +
     optionalOffer +
-    " if that would be useful."
+    "."
   );
 }
 
@@ -915,29 +1068,12 @@ export default async function handler(
    */
 
   if (
-    !process.env.OPENAI_API_KEY
-  ) {
-
-    console.error(
-      "OPENAI_API_KEY is missing."
-    );
-
-
-    return res
-      .status(500)
-      .json({
-        error:
-          "Server configuration error"
-      });
-  }
-
-
-  if (
+    !process.env.OPENAI_API_KEY ||
     !process.env.DATABASE_URL
   ) {
 
     console.error(
-      "DATABASE_URL is missing."
+      "Missing required environment variable."
     );
 
 
@@ -1124,19 +1260,7 @@ export default async function handler(
   if (
     !isValidEpoch(
       userSubmitEpoch
-    )
-  ) {
-
-    return res
-      .status(400)
-      .json({
-        error:
-          "Invalid user_submit_epoch"
-      });
-  }
-
-
-  if (
+    ) ||
     !isValidEpoch(
       chatStartEpoch
     )
@@ -1146,7 +1270,7 @@ export default async function handler(
       .status(400)
       .json({
         error:
-          "Invalid chat_start_epoch"
+          "Invalid epoch value"
       });
   }
 
@@ -1166,7 +1290,9 @@ export default async function handler(
           turn_number,
           response_id,
           assistant_text,
-          offer_category
+          offer_category,
+          optional_offer,
+          closing_text
         FROM ai_turns
         WHERE client_message_id =
           ${clientMessageId}
@@ -1221,7 +1347,13 @@ export default async function handler(
             duplicate.assistant_text,
 
           offer_category:
-            duplicate.offer_category
+            duplicate.offer_category,
+
+          optional_offer:
+            duplicate.optional_offer,
+
+          closing_text:
+            duplicate.closing_text
 
         });
     }
@@ -1312,12 +1444,13 @@ export default async function handler(
     }
 
 
-    let session =
+    const session =
       sessionRows[0];
 
 
     /*
-     * Prevent accidental reuse of an old travel/dinner session.
+     * Do not allow an old pilot session to be accidentally reused
+     * under this new manipulation.
      */
 
     if (
@@ -1334,40 +1467,6 @@ export default async function handler(
         });
     }
 
-
-    if (
-      !session.dinner_priorities
-    ) {
-
-      await sql`
-        UPDATE ai_sessions
-        SET
-          dinner_priorities =
-            ${requestedPriorities},
-          study_version =
-            ${STUDY_VERSION},
-          prompt_version =
-            ${PROMPT_VERSION},
-          task_update_version =
-            ${TASK_UPDATE_VERSION},
-          model_requested =
-            ${MODEL},
-          updated_at =
-            NOW()
-        WHERE session_id =
-          ${sessionId}
-      `;
-
-
-      session.dinner_priorities =
-        requestedPriorities;
-    }
-
-
-    /*
-     * From this point onward, use condition and priorities
-     * stored in Neon rather than browser values.
-     */
 
     const storedCondition =
       String(
@@ -1487,13 +1586,7 @@ export default async function handler(
 
     /*
      * --------------------------------------------------------
-     * PURE RANDOMIZATION OF OFFER CATEGORY
-     * --------------------------------------------------------
-     *
-     * Notice that selectOfferCategory() receives neither
-     * condition nor previous category.
-     *
-     * This is independent random assignment with replacement.
+     * PURE OFFER-CATEGORY RANDOMIZATION
      * --------------------------------------------------------
      */
 
@@ -1525,14 +1618,15 @@ exact final sentence:
 
 "${previousClosingText}"
 
-That final sentence was added by the application after the substantive
-assistant response.
+That final sentence was appended by the application after the
+assistant's substantive response.
 
-Interpret the participant's new message in that conversational context.
+Interpret the participant's new message in that conversational
+context.
 
-If the participant gives a short response such as "yes", "sure",
-"okay", "please", or another acceptance, interpret that response as
-accepting the assistance offered in the exact final sentence above.
+If the participant gives a short acceptance such as "yes", "sure",
+"okay", "please", or similar language, interpret it as accepting the
+assistance offered in that exact final sentence.
 
 The participant's new message is:
 
@@ -1546,11 +1640,9 @@ ${message}
      * OPENAI REQUEST
      * --------------------------------------------------------
      *
-     * IMPORTANT:
+     * OpenAI sees the offer category.
      *
-     * OpenAI receives offer_category.
-     *
-     * OpenAI DOES NOT receive question/statement condition.
+     * OpenAI NEVER receives question/statement condition.
      * --------------------------------------------------------
      */
 
@@ -1565,7 +1657,7 @@ ${message}
       },
 
       max_output_tokens:
-        700,
+        850,
 
       instructions:
         buildInstructions(
@@ -1828,10 +1920,7 @@ ${message}
     ) {
 
       console.error(
-        "No output_text found:",
-        JSON.stringify(
-          openAIData
-        )
+        "No output_text found."
       );
 
 
@@ -1899,13 +1988,14 @@ ${message}
 
     const optionalOffer =
       cleanOptionalOffer(
-        parsedOutput.optional_offer
+        parsedOutput.optional_offer,
+        offerCategory
       );
 
 
     /*
      * --------------------------------------------------------
-     * APPLY QUESTION / STATEMENT CONDITION
+     * APPLY EXPERIMENTAL CONDITION
      * --------------------------------------------------------
      */
 
@@ -2003,7 +2093,7 @@ ${message}
 
     /*
      * --------------------------------------------------------
-     * SAVE TO NEON
+     * SAVE TURN TO NEON
      * --------------------------------------------------------
      */
 
@@ -2071,7 +2161,9 @@ ${message}
             turn_number,
             response_id,
             assistant_text,
-            offer_category
+            offer_category,
+            optional_offer,
+            closing_text
           FROM ai_turns
           WHERE client_message_id =
             ${clientMessageId}
@@ -2114,7 +2206,13 @@ ${message}
               existing.assistant_text,
 
             offer_category:
-              existing.offer_category
+              existing.offer_category,
+
+            optional_offer:
+              existing.optional_offer,
+
+            closing_text:
+              existing.closing_text
 
           });
       }
@@ -2164,6 +2262,12 @@ ${message}
 
         offer_category:
           offerCategory,
+
+        optional_offer:
+          optionalOffer,
+
+        closing_text:
+          closingText,
 
         model:
           modelReturned,
