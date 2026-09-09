@@ -33,26 +33,24 @@ export default async function handler(
         "qualtrics-ai-study",
 
       study_version:
-        "dinner_2x2_jumbo_pilot_v1",
+        "dinner_question_statement_confirmatory_v1",
 
       prompt_version:
-        "dinner_2x2_ai_performable_microoffers_v2",
+        "dinner_very_low_ai_performable_v1",
 
       model:
         "gpt-5.6-luna",
 
-      factors: {
+      experimental_factor:
+        "closing_form",
 
-        closing_form: [
-          "question",
-          "statement"
-        ],
+      conditions: [
+        "question",
+        "statement"
+      ],
 
-        offer_scope: [
-          "functional_micro",
-          "very_low_micro"
-        ]
-      },
+      offer_scope:
+        "very_low_micro",
 
       question_template:
         "Would you like me to X?",
@@ -70,10 +68,13 @@ export default async function handler(
       offer_action_requirement:
         "text_based_ai_performable_action",
 
+      model_condition_blinding:
+        "condition_not_sent_to_model",
+
       offer_category_randomization:
         "independent_with_replacement_every_turn",
 
-      first_response:
+      first_response_requirement:
         "complete_self_contained_plan",
 
       timestamp:
